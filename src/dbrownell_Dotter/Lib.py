@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 # |  Public Types
 # |
 # ----------------------------------------------------------------------
-class EntryAction(Enum):
+class InstallAction(Enum):
     """Action to perform for an entry."""
 
     Copy = auto()
@@ -38,24 +38,27 @@ class EntryAction(Enum):
 
 # ----------------------------------------------------------------------
 @define(frozen=True)
-class Entry:
+class InstallEntry:
     """Content to be copied from source to dest."""
 
-    action: EntryAction
+    action: InstallAction
     """Action to perform for this entry."""
 
-    source: Path | str
-    """Source of the content. Value may be a path to a file or directory that should be copied or content that should be written."""
+    source: Path
+    """Source path to a file or directory."""
 
     dest: Path
     """Destination path."""
 
+    rendered_content: str | None = None
+    """Rendered template content when the source is a Jinja template."""
+
 
 # ----------------------------------------------------------------------
-def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:
+def ResolveInstallEntries(env: Environment, config_filenames: list[Path]) -> list[InstallEntry]:
     """Resolve the configuration data into a list of entries that can be processed."""
 
-    results: list[Entry] = []
+    results: list[InstallEntry] = []
     missing_vars: dict[Path, set[str]] = {}
 
     for config_filename in config_filenames:
@@ -64,9 +67,10 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
         for entry in config.entries:
             has_errors = False
 
-            action: EntryAction | None = None
+            action: InstallAction | None = None
             dest: Path | None = None
-            source: Path | str = (config_filename.parent / entry.source).expanduser().resolve()
+            source: Path = (config_filename.parent / entry.source).expanduser().resolve()
+            rendered_content: str | None = None
 
             # Process the dest
             if this_missing_vars := meta.find_undeclared_variables(env.parse(entry.dest)):
@@ -77,7 +81,7 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
 
             # Process the source if it is a template
             if source.suffix in [".jinja", ".jinja2", ".j2"]:
-                action = EntryAction.Write
+                action = InstallAction.Write
 
                 content = source.read_text(encoding="utf-8")
 
@@ -85,14 +89,14 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
                     missing_vars.setdefault(source, set()).update(this_missing_vars)
                     has_errors = True
                 else:
-                    source = _Populate(env, content)
+                    rendered_content = _Populate(env, content)
             elif dest:
-                action = EntryAction.Link if source.drive == dest.drive else EntryAction.Copy
+                action = InstallAction.Link if source.drive == dest.drive else InstallAction.Copy
 
             if not has_errors:
                 assert action
                 assert dest
-                results.append(Entry(action, source, dest))
+                results.append(InstallEntry(action, source, dest, rendered_content))
 
     if missing_vars:
         sections: list[str] = []
@@ -131,9 +135,9 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
 
 
 # ----------------------------------------------------------------------
-def ProcessEntries(
+def ProcessInstallEntries(
     dm: DoneManager,
-    entries: list[Entry],
+    entries: list[InstallEntry],
     *,
     force: bool = False,
     dry_run: bool = False,
@@ -163,9 +167,7 @@ def ProcessEntries(
                     action_desc = "Already exists"
                     continue
 
-            if entry.action == EntryAction.Copy:
-                assert isinstance(entry.source, Path), entry.source
-
+            if entry.action == InstallAction.Copy:
                 if entry.source.is_file():
                     action = lambda: shutil.copy2(entry.source, entry.dest)  # noqa: B023, E731
                 else:
@@ -173,19 +175,17 @@ def ProcessEntries(
 
                 action_desc = "Copied"
 
-            elif entry.action == EntryAction.Link:
-                assert isinstance(entry.source, Path), entry.source
-
+            elif entry.action == InstallAction.Link:
                 action = lambda: entry.dest.symlink_to(  # noqa: B023, E731
                     entry.source,  # noqa: B023
-                    target_is_directory=entry.source.is_dir(),  # noqa: B023  # ty: ignore[unresolved-attribute]
+                    target_is_directory=entry.source.is_dir(),  # noqa: B023
                 )
                 action_desc = "Linked"
 
-            elif entry.action == EntryAction.Write:
-                assert isinstance(entry.source, str), entry.source
+            elif entry.action == InstallAction.Write:
+                assert entry.rendered_content is not None, entry
 
-                action = lambda: entry.dest.write_text(entry.source, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
+                action = lambda: entry.dest.write_text(entry.rendered_content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
                 action_desc = "Wrote"
 
             else:
