@@ -80,16 +80,16 @@ def Install(
         env = Environment(autoescape=False)  # noqa: S701 (we want to preserve the original content, regardless of what it is)
         env.globals.update(var_dict)
 
-        entries: list[Lib.Entry] = []
+        entries: list[Lib.InstallEntry] = []
 
         with dm.Nested(
             "Resolving entries...",
             lambda: "{} found".format(inflect.no("entry", len(entries))),
         ):
-            entries = Lib.ResolveEntries(env, config_filenames)
+            entries = Lib.ResolveInstallEntries(env, config_filenames)
 
         with dm.Nested("Processing entries..."):
-            Lib.ProcessEntries(dm, entries, force=force, dry_run=dry_run)
+            Lib.ProcessInstallEntries(dm, entries, force=force, dry_run=dry_run)
 
 
 # ----------------------------------------------------------------------

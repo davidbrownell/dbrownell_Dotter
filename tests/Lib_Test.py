@@ -10,7 +10,7 @@ from dbrownell_Common.Streams.DoneManager import DoneManager
 from dbrownell_Common.TestHelpers.StreamTestHelpers import GenerateDoneManagerAndContent
 from jinja2 import Environment
 
-from dbrownell_Dotter.Lib import Entry, EntryAction, ProcessEntries, ResolveEntries
+from dbrownell_Dotter.Lib import InstallEntry, InstallAction, ProcessInstallEntries, ResolveInstallEntries
 
 
 # ----------------------------------------------------------------------
@@ -21,7 +21,7 @@ class TestResolveEntries:
 
         env = Environment()
 
-        entries = ResolveEntries(env, [])
+        entries = ResolveInstallEntries(env, [])
 
         assert entries == []
 
@@ -42,7 +42,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert entries == []
 
@@ -69,10 +69,10 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].action == EntryAction.Link
+        assert entries[0].action == InstallAction.Link
         assert entries[0].source == source_file.resolve()
         assert entries[0].dest == dest_path.resolve()
 
@@ -98,10 +98,10 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].action == EntryAction.Copy
+        assert entries[0].action == InstallAction.Copy
         assert entries[0].source == Path("C:/source.txt").resolve()
         assert entries[0].dest == Path("D:/dest.txt").resolve()
 
@@ -129,11 +129,12 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].action == EntryAction.Write
-        assert entries[0].source == "Hello World!"
+        assert entries[0].action == InstallAction.Write
+        assert entries[0].source == template_file.resolve()
+        assert entries[0].rendered_content == "Hello World!"
         assert entries[0].dest == dest_path.resolve()
 
     # ----------------------------------------------------------------------
@@ -160,11 +161,12 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].action == EntryAction.Write
-        assert entries[0].source == "Value: 42"
+        assert entries[0].action == InstallAction.Write
+        assert entries[0].source == template_file.resolve()
+        assert entries[0].rendered_content == "Value: 42"
 
     # ----------------------------------------------------------------------
     def test_write_action_j2_extension(self, tmp_path: Path) -> None:
@@ -190,11 +192,12 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].action == EntryAction.Write
-        assert entries[0].source == "Item: test"
+        assert entries[0].action == InstallAction.Write
+        assert entries[0].source == template_file.resolve()
+        assert entries[0].rendered_content == "Item: test"
 
     # ----------------------------------------------------------------------
     def test_jinja_variable_in_dest(self, tmp_path: Path) -> None:
@@ -219,7 +222,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
         assert entries[0].dest == (tmp_path / "output_folder" / "dest.txt").resolve()
@@ -247,7 +250,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
         assert entries[0].dest == (tmp_path / "env_folder" / "dest.txt").resolve()
@@ -276,10 +279,11 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].source == "Env: environment_value"
+        assert entries[0].source == template_file.resolve()
+        assert entries[0].rendered_content == "Env: environment_value"
 
     # ----------------------------------------------------------------------
     def test_missing_variable_in_dest_raises_error(self, tmp_path: Path) -> None:
@@ -304,7 +308,7 @@ class TestResolveEntries:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            ResolveEntries(env, [config_file])
+            ResolveInstallEntries(env, [config_file])
 
         assert str(exc_info.value) == textwrap.dedent(
             f"""\
@@ -340,7 +344,7 @@ class TestResolveEntries:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            ResolveEntries(env, [config_file])
+            ResolveInstallEntries(env, [config_file])
 
         assert str(exc_info.value) == textwrap.dedent(
             f"""\
@@ -375,7 +379,7 @@ class TestResolveEntries:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            ResolveEntries(env, [config_file])
+            ResolveInstallEntries(env, [config_file])
 
         assert str(exc_info.value) == textwrap.dedent(
             f"""\
@@ -433,7 +437,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config1, config2])
+        entries = ResolveInstallEntries(env, [config1, config2])
 
         assert len(entries) == 2
         assert entries[0].source == source1.resolve()
@@ -470,11 +474,11 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 2
-        assert entries[0].action == EntryAction.Link
-        assert entries[1].action == EntryAction.Link
+        assert entries[0].action == InstallAction.Link
+        assert entries[1].action == InstallAction.Link
 
     # ----------------------------------------------------------------------
     def test_combined_jinja_and_env_vars(self, tmp_path: Path, monkeypatch) -> None:
@@ -504,10 +508,11 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].source == "Jinja: jinja_part, Env: env_part"
+        assert entries[0].source == template_file.resolve()
+        assert entries[0].rendered_content == "Jinja: jinja_part, Env: env_part"
 
     # ----------------------------------------------------------------------
     def test_source_resolved_relative_to_config_parent(self, tmp_path: Path) -> None:
@@ -535,7 +540,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveInstallEntries(env, [config_file])
 
         assert len(entries) == 1
         assert entries[0].source == source_file.resolve()
@@ -570,7 +575,7 @@ class TestResolveEntries:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            ResolveEntries(env, [config_file])
+            ResolveInstallEntries(env, [config_file])
 
         assert str(exc_info.value) == textwrap.dedent(
             f"""\
@@ -606,7 +611,7 @@ class TestResolveEntries:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            ResolveEntries(env, [config_file])
+            ResolveInstallEntries(env, [config_file])
 
         assert str(exc_info.value) == textwrap.dedent(
             f"""\
@@ -625,13 +630,14 @@ class TestProcessEntries:
     def test_write_action(self, tmp_path: Path) -> None:
         """Test that Write action writes string content to dest file."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
-        entries = [Entry(EntryAction.Write, "Hello, World!", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "Hello, World!")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -653,12 +659,12 @@ class TestProcessEntries:
         source_file.write_text("source content", encoding="utf-8")
 
         dest_path = tmp_path / "dest.txt"
-        entries = [Entry(EntryAction.Copy, source_file, dest_path)]
+        entries = [InstallEntry(InstallAction.Copy, source_file, dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -683,12 +689,12 @@ class TestProcessEntries:
         (source_dir / "subdir" / "file2.txt").write_text("file2 content", encoding="utf-8")
 
         dest_path = tmp_path / "dest_dir"
-        entries = [Entry(EntryAction.Copy, source_dir, dest_path)]
+        entries = [InstallEntry(InstallAction.Copy, source_dir, dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -712,12 +718,12 @@ class TestProcessEntries:
         source_file.write_text("source content", encoding="utf-8")
 
         dest_path = tmp_path / "link.txt"
-        entries = [Entry(EntryAction.Link, source_file, dest_path)]
+        entries = [InstallEntry(InstallAction.Link, source_file, dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -736,15 +742,16 @@ class TestProcessEntries:
     def test_dest_already_exists_no_force(self, tmp_path: Path) -> None:
         """Test that existing dest is skipped when force=False."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(EntryAction.Write, "new content", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "new content")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries, force=False)
+        ProcessInstallEntries(dm, entries, force=False)
 
         content = cast(str, next(dm_and_content))
 
@@ -761,15 +768,16 @@ class TestProcessEntries:
     def test_dest_already_exists_with_force_file(self, tmp_path: Path) -> None:
         """Test that existing dest file is removed and recreated when force=True."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(EntryAction.Write, "new content", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "new content")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries, force=True)
+        ProcessInstallEntries(dm, entries, force=True)
 
         content = cast(str, next(dm_and_content))
 
@@ -795,12 +803,12 @@ class TestProcessEntries:
         dest_path.mkdir()
         (dest_path / "old_file.txt").write_text("old content", encoding="utf-8")
 
-        entries = [Entry(EntryAction.Copy, source_file, dest_path)]
+        entries = [InstallEntry(InstallAction.Copy, source_file, dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries, force=True)
+        ProcessInstallEntries(dm, entries, force=True)
 
         content = cast(str, next(dm_and_content))
 
@@ -821,13 +829,14 @@ class TestProcessEntries:
     def test_dry_run(self, tmp_path: Path) -> None:
         """Test that dry_run=True does not perform actual file operations."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
-        entries = [Entry(EntryAction.Write, "Hello, World!", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "Hello, World!")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries, dry_run=True)
+        ProcessInstallEntries(dm, entries, dry_run=True)
 
         content = cast(str, next(dm_and_content))
 
@@ -844,15 +853,16 @@ class TestProcessEntries:
     def test_dry_run_with_force_existing_file(self, tmp_path: Path) -> None:
         """Test that dry_run=True with force=True does not remove existing file."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(EntryAction.Write, "new content", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "new content")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries, force=True, dry_run=True)
+        ProcessInstallEntries(dm, entries, force=True, dry_run=True)
 
         content = cast(str, next(dm_and_content))
 
@@ -874,18 +884,19 @@ class TestProcessEntries:
         source_file = tmp_path / "source.txt"
         source_file.write_text("source content", encoding="utf-8")
 
+        template_file = tmp_path / "template.txt.jinja"
         dest1 = tmp_path / "dest1.txt"
         dest2 = tmp_path / "dest2.txt"
 
         entries = [
-            Entry(EntryAction.Write, "written content", dest1),
-            Entry(EntryAction.Copy, source_file, dest2),
+            InstallEntry(InstallAction.Write, template_file, dest1, "written content"),
+            InstallEntry(InstallAction.Copy, source_file, dest2),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -904,13 +915,14 @@ class TestProcessEntries:
     def test_creates_parent_directories(self, tmp_path: Path) -> None:
         """Test that parent directories are created if they don't exist."""
 
+        source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "nested" / "path" / "output.txt"
-        entries = [Entry(EntryAction.Write, "nested content", dest_path)]
+        entries = [InstallEntry(InstallAction.Write, source_path, dest_path, "nested content")]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -928,12 +940,12 @@ class TestProcessEntries:
     def test_empty_entries_list(self) -> None:
         """Test processing an empty entries list."""
 
-        entries: list[Entry] = []
+        entries: list[InstallEntry] = []
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 
@@ -952,12 +964,12 @@ class TestProcessEntries:
         (source_dir / "file.txt").write_text("file content", encoding="utf-8")
 
         dest_path = tmp_path / "link_dir"
-        entries = [Entry(EntryAction.Link, source_dir, dest_path)]
+        entries = [InstallEntry(InstallAction.Link, source_dir, dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
 
-        ProcessEntries(dm, entries)
+        ProcessInstallEntries(dm, entries)
 
         content = cast(str, next(dm_and_content))
 

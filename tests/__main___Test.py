@@ -8,7 +8,7 @@ from jinja2 import Environment
 from typer.testing import CliRunner
 
 from dbrownell_Dotter.__main__ import app
-from dbrownell_Dotter.Lib import Entry, EntryAction
+from dbrownell_Dotter.Lib import InstallEntry, InstallAction
 
 
 # ----------------------------------------------------------------------
@@ -34,11 +34,11 @@ class TestInstall:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
-        mock_entries: list[Entry] = []
+        mock_entries: list[InstallEntry] = []
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = mock_entries
 
@@ -48,12 +48,12 @@ class TestInstall:
             mock_resolve.assert_called_once()
             mock_process.assert_called_once()
 
-            # Verify ResolveEntries was called with an Environment and the config files
+            # Verify ResolveInstallEntries was called with an Environment and the config files
             resolve_args = mock_resolve.call_args
             assert isinstance(resolve_args[0][0], Environment)
             assert resolve_args[0][1] == [config_file]
 
-            # Verify ProcessEntries was called with correct kwargs
+            # Verify ProcessInstallEntries was called with correct kwargs
             process_kwargs = mock_process.call_args[1]
             assert process_kwargs["force"] is False
             assert process_kwargs["dry_run"] is False
@@ -69,8 +69,8 @@ class TestInstall:
         config2.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = []
 
@@ -84,14 +84,14 @@ class TestInstall:
 
     # ----------------------------------------------------------------------
     def test_force_option(self, tmp_path: Path) -> None:
-        """Test that --force option is passed to ProcessEntries."""
+        """Test that --force option is passed to ProcessInstallEntries."""
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = []
 
@@ -104,14 +104,14 @@ class TestInstall:
 
     # ----------------------------------------------------------------------
     def test_dry_run_option(self, tmp_path: Path) -> None:
-        """Test that --dry-run option is passed to ProcessEntries."""
+        """Test that --dry-run option is passed to ProcessInstallEntries."""
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = []
 
@@ -130,8 +130,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = []
 
@@ -151,8 +151,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
@@ -173,8 +173,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
@@ -198,8 +198,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
@@ -222,8 +222,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries"),
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             result = runner.invoke(app, [str(config_file), "--var", "invalid"])
 
@@ -232,18 +232,18 @@ class TestInstall:
 
     # ----------------------------------------------------------------------
     def test_entries_passed_to_process(self, tmp_path: Path) -> None:
-        """Test that entries from ResolveEntries are passed to ProcessEntries."""
+        """Test that entries from ResolveInstallEntries are passed to ProcessInstallEntries."""
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         mock_entries = [
-            Entry(EntryAction.Write, "content", tmp_path / "dest.txt"),
+            InstallEntry(InstallAction.Write, tmp_path / "source.txt", tmp_path / "dest.txt"),
         ]
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries") as mock_process,
         ):
             mock_resolve.return_value = mock_entries
 
@@ -251,7 +251,7 @@ class TestInstall:
 
             assert result.exit_code == 0
 
-            # Verify the entries were passed to ProcessEntries
+            # Verify the entries were passed to ProcessInstallEntries
             process_args = mock_process.call_args[0]
             assert process_args[1] == mock_entries
 
@@ -273,8 +273,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
@@ -290,8 +290,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
@@ -307,8 +307,8 @@ class TestInstall:
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
         with (
-            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
-            patch("dbrownell_Dotter.__main__.Lib.ProcessEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.ResolveInstallEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ProcessInstallEntries"),
         ):
             mock_resolve.return_value = []
 
