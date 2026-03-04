@@ -80,16 +80,75 @@ def Install(
         env = Environment(autoescape=False)  # noqa: S701 (we want to preserve the original content, regardless of what it is)
         env.globals.update(var_dict)
 
-        entries: list[Lib.InstallEntry] = []
+        entries: list[Lib.Entry] = []
 
         with dm.Nested(
             "Resolving entries...",
             lambda: "{} found".format(inflect.no("entry", len(entries))),
         ):
-            entries = Lib.ResolveInstallEntries(env, config_filenames)
+            entries = Lib.ResolveEntries(env, config_filenames)
 
         with dm.Nested("Processing entries..."):
-            Lib.ProcessInstallEntries(dm, entries, force=force, dry_run=dry_run)
+            Lib.InstallEntries(dm, entries, force=force, dry_run=dry_run)
+
+
+# ----------------------------------------------------------------------
+@app.command("ReverseSync", no_args_is_help=True)
+def ReverseSync(
+    config_filenames: Annotated[
+        list[Path],
+        typer.Argument(
+            dir_okay=False, exists=True, resolve_path=True, help="Configuration files to process."
+        ),
+    ],
+    variables: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--var",
+            help="Jinja template variables in the form key=value. Can be specified multiple times.",
+        ),
+    ] = None,
+    dry_run: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--dry-run", help="Show what would be done without making changes."),
+    ] = False,
+    verbose: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--verbose", help="Write verbose information to the terminal."),
+    ] = False,
+    debug: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option("--debug", help="Write debug information to the terminal."),
+    ] = False,
+) -> None:
+    """Sync changes from installed destinations back to source files."""
+
+    with DoneManager.CreateCommandLine(
+        flags=DoneManagerFlags.Create(verbose=verbose, debug=debug),
+    ) as dm:
+        # Parse variables into a dictionary
+        var_dict: dict[str, object] = {}
+        for var in variables or []:
+            if "=" not in var:
+                msg = f"Variable '{var}' must be in the form key=value."
+                raise typer.BadParameter(msg)
+            key, value = var.split("=", 1)
+            var_dict[key] = value
+
+        # Create the Jinja environment
+        env = Environment(autoescape=False)  # noqa: S701 (we want to preserve the original content, regardless of what it is)
+        env.globals.update(var_dict)
+
+        entries: list[Lib.Entry] = []
+
+        with dm.Nested(
+            "Resolving entries...",
+            lambda: "{} found".format(inflect.no("entry", len(entries))),
+        ):
+            entries = Lib.ResolveEntries(env, config_filenames)
+
+        with dm.Nested("Processing entries..."):
+            Lib.ReverseSyncEntries(dm, entries, var_dict, dry_run=dry_run)
 
 
 # ----------------------------------------------------------------------
