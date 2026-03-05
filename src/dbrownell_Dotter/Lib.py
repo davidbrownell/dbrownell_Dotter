@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import re
 import shutil
 import textwrap
 
@@ -38,6 +39,9 @@ class Action(Enum):
     Write = auto()
     """Write the source content to the destination."""
 
+    Substitute = auto()
+    """Apply regex substitutions to an existing file."""
+
 
 # ----------------------------------------------------------------------
 @define(frozen=True)
@@ -47,14 +51,17 @@ class Entry:
     action: Action
     """Action to perform for this entry."""
 
-    source: Path
-    """Source path to a file or directory."""
+    source: Path | None
+    """Source path to a file or directory. None for Substitute actions."""
 
     dest: Path
     """Destination path."""
 
     rendered_content: str | None = None
     """Rendered template content when the source is a Jinja template."""
+
+    substitutions: list[tuple[re.Pattern[str], str]] | None = None
+    """List of (pattern, rendered_replacement) tuples for Substitute actions."""
 
 
 # ----------------------------------------------------------------------
@@ -83,9 +90,10 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
             has_errors = False
 
             action: Action | None = None
+            source: Path | None = None
             dest: Path | None = None
-            source: Path = (config_filename.parent / entry.source).expanduser().resolve()
             rendered_content: str | None = None
+            substitutions: list[tuple[re.Pattern[str], str]] | None = None
 
             # Process the dest
             if this_missing_vars := meta.find_undeclared_variables(env.parse(entry.dest)):
@@ -94,24 +102,50 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
             else:
                 dest = Path(_Populate(env, entry.dest)).expanduser().resolve()
 
-            # Process the source if it is a template
-            if source.suffix in [".jinja", ".jinja2", ".j2"]:
-                action = Action.Write
+            if entry.source is not None:
+                # We are looking at a Write, Link, or Copy
 
-                content = source.read_text(encoding="utf-8")
+                source = (config_filename.parent / entry.source).expanduser().resolve()
 
-                if this_missing_vars := meta.find_undeclared_variables(env.parse(content)):
-                    ProcessMissingVars(config, source, this_missing_vars)
-                    has_errors = True
-                else:
-                    rendered_content = _Populate(env, content)
-            elif dest:
-                action = Action.Link if source.drive == dest.drive else Action.Copy
+                # Process the source if it is a template
+                if source.suffix in [".jinja", ".jinja2", ".j2"]:
+                    action = Action.Write
+
+                    content = source.read_text(encoding="utf-8")
+
+                    if this_missing_vars := meta.find_undeclared_variables(env.parse(content)):
+                        ProcessMissingVars(config, source, this_missing_vars)
+                        has_errors = True
+                    else:
+                        rendered_content = _Populate(env, content)
+                elif dest:
+                    action = Action.Link if source.drive == dest.drive else Action.Copy
+            else:
+                # We are looking at a Substitute
+                assert entry.substitutions, entry
+
+                action = Action.Substitute
+                resolved_substitutions: list[tuple[re.Pattern[str], str]] = []
+
+                for sub in entry.substitutions:
+                    # Process the replacement string for Jinja/env vars
+                    if this_missing_vars := meta.find_undeclared_variables(env.parse(sub.replacement)):
+                        ProcessMissingVars(config, config_filename, this_missing_vars)
+                        has_errors = True
+                    else:
+                        resolved_substitutions.append(
+                            (
+                                re.compile(sub.pattern, re.MULTILINE),
+                                _Populate(env, sub.replacement),
+                            ),
+                        )
+
+                substitutions = resolved_substitutions
 
             if not has_errors:
                 assert action
                 assert dest
-                results.append(Entry(action, source, dest, rendered_content))
+                results.append(Entry(action, source, dest, rendered_content, substitutions))
 
     if all_missing_vars:
         sections: list[str] = [
@@ -141,7 +175,7 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
 
 
 # ----------------------------------------------------------------------
-def InstallEntries(
+def InstallEntries(  # noqa: C901, PLR0915
     dm: DoneManager,
     entries: list[Entry],
     *,
@@ -161,7 +195,12 @@ def InstallEntries(
                 None if action_desc is None else action_template.format(action_desc)  # noqa: B023
             ),
         ) as entry_dm:
-            if entry.dest.exists():
+            # Substitute action requires the dest to exist (we're modifying an existing file)
+            if entry.action == Action.Substitute:
+                if not entry.dest.exists():
+                    entry_dm.WriteError("Destination does not exist.")
+                    continue
+            elif entry.dest.exists():
                 if force:
                     with entry_dm.Nested("Removing{}...".format(" (dry_run)" if dry_run else "")):
                         if not dry_run:
@@ -174,17 +213,21 @@ def InstallEntries(
                     continue
 
             if entry.action == Action.Copy:
+                assert entry.source is not None, entry
+
                 if entry.source.is_file():
-                    action = lambda: shutil.copy2(entry.source, entry.dest)  # noqa: B023, E731
+                    action = lambda: shutil.copy2(entry.source, entry.dest)  # noqa: B023, E731  # ty: ignore[no-matching-overload]
                 else:
-                    action = lambda: shutil.copytree(entry.source, entry.dest)  # noqa: B023, E731
+                    action = lambda: shutil.copytree(entry.source, entry.dest)  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
 
                 action_desc = "Copied"
 
             elif entry.action == Action.Link:
+                assert entry.source is not None, entry
+
                 action = lambda: entry.dest.symlink_to(  # noqa: B023, E731
-                    entry.source,  # noqa: B023
-                    target_is_directory=entry.source.is_dir(),  # noqa: B023
+                    entry.source,  # noqa: B023  # ty: ignore[invalid-argument-type]
+                    target_is_directory=entry.source.is_dir(),  # noqa: B023  # ty: ignore[unresolved-attribute]
                 )
                 action_desc = "Linked"
 
@@ -193,6 +236,29 @@ def InstallEntries(
 
                 action = lambda: entry.dest.write_text(entry.rendered_content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
                 action_desc = "Wrote"
+
+            elif entry.action == Action.Substitute:
+                assert entry.substitutions is not None, entry
+
+                if not entry.dest.is_file():
+                    entry_dm.WriteError("Destination is not a file.")
+                    continue
+
+                # ----------------------------------------------------------------------
+                def ApplySubstitutions(entry: Entry) -> None:
+                    assert entry.substitutions is not None
+
+                    content = entry.dest.read_text(encoding="utf-8")
+
+                    for pattern, replacement in entry.substitutions:
+                        content = pattern.sub(replacement, content)
+
+                    entry.dest.write_text(content, encoding="utf-8")
+
+                # ----------------------------------------------------------------------
+
+                action = lambda entry=entry: ApplySubstitutions(entry)  # noqa: E731
+                action_desc = "Substituted"
 
             else:
                 assert False, entry.action  # noqa: B011, PT015  # pragma: no cover
@@ -203,7 +269,7 @@ def InstallEntries(
 
 
 # ----------------------------------------------------------------------
-def ReverseSyncEntries(
+def ReverseSyncEntries(  # noqa: C901, PLR0915
     dm: DoneManager,
     entries: list[Entry],
     template_vars: dict[str, object],
@@ -228,22 +294,30 @@ def ReverseSyncEntries(
                 continue
 
             if entry.action == Action.Link:
-                action_desc = "Skipped SymLink"
+                action_desc = "Skipped Symlink"
+                continue
+
+            if entry.action == Action.Substitute:
+                action_desc = "Skipped Substitution"
                 continue
 
             action: Callable[[], None] | None = None
 
             if entry.action == Action.Copy:
+                assert entry.source is not None, entry
+
                 if entry.dest.is_file():
                     if not entry.source.is_file() or _CalcFileHash(entry.dest) != _CalcFileHash(entry.source):
-                        action = lambda: shutil.copy2(entry.dest, entry.source)  # noqa: B023, E731
+                        action = lambda: shutil.copy2(entry.dest, entry.source)  # noqa: B023, E731  # ty: ignore[no-matching-overload]
                         action_desc = "Copied file"
                 else:  # noqa: PLR5501
                     if not entry.source.is_dir() or not _DirectoriesMatch(entry.dest, entry.source):
-                        action = lambda: shutil.copytree(entry.dest, entry.source)  # noqa: B023, E731
+                        action = lambda: shutil.copytree(entry.dest, entry.source)  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
                         action_desc = "Copied directory"
 
             elif entry.action == Action.Write:
+                assert entry.source is not None, entry
+
                 if not entry.dest.is_file():
                     entry_dm.WriteError("Destination is not a file.")
                     continue
@@ -256,7 +330,7 @@ def ReverseSyncEntries(
 
                     content = untemplater(entry.dest)
 
-                    action = lambda: entry.source.write_text(content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
+                    action = lambda: entry.source.write_text(content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
                     action_desc = "Wrote template"
 
             else:
@@ -266,6 +340,7 @@ def ReverseSyncEntries(
                 action_desc = "No changes detected"
             elif not dry_run:
                 assert action_desc is not None
+                assert entry.source is not None, entry
 
                 with entry_dm.Nested("Removing source content..."):
                     if entry.source.is_file():

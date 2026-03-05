@@ -1,3 +1,4 @@
+import re
 import sys
 import textwrap
 
@@ -623,6 +624,245 @@ class TestResolveEntries:
             """,
         )
 
+    # ----------------------------------------------------------------------
+    def test_substitute_action_basic(self, tmp_path: Path) -> None:
+        """Test that Substitute action is used when substitutions are defined."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "target.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "old_value"
+                        replacement: "new_value"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Substitute
+        assert entries[0].source is None
+        assert entries[0].dest == dest_path.resolve()
+        assert entries[0].substitutions is not None
+        assert len(entries[0].substitutions) == 1
+        assert entries[0].substitutions[0][0].pattern == "old_value"
+        assert entries[0].substitutions[0][1] == "new_value"
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_multiple_patterns(self, tmp_path: Path) -> None:
+        """Test Substitute action with multiple regex patterns."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "target.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "pattern1"
+                        replacement: "replacement1"
+                      - pattern: "pattern2"
+                        replacement: "replacement2"
+                      - pattern: "^#.*$"
+                        replacement: ""
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Substitute
+        assert entries[0].substitutions is not None
+        assert len(entries[0].substitutions) == 3
+        assert entries[0].substitutions[0][0].pattern == "pattern1"
+        assert entries[0].substitutions[0][1] == "replacement1"
+        assert entries[0].substitutions[1][0].pattern == "pattern2"
+        assert entries[0].substitutions[1][1] == "replacement2"
+        assert entries[0].substitutions[2][0].pattern == "^#.*$"
+        assert entries[0].substitutions[2][1] == ""
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_with_jinja_variable_in_replacement(self, tmp_path: Path) -> None:
+        """Test Substitute action with Jinja variable in replacement string."""
+
+        env = Environment()
+        env.globals["email"] = "user@example.com"
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "target.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "^EMAIL=.*$"
+                        replacement: "EMAIL={{{{ email }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Substitute
+        assert entries[0].substitutions is not None
+        assert len(entries[0].substitutions) == 1
+        assert entries[0].substitutions[0][1] == "EMAIL=user@example.com"
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_with_env_variable_in_replacement(self, tmp_path: Path, monkeypatch) -> None:
+        """Test Substitute action with environment variable in replacement string."""
+
+        env = Environment()
+        monkeypatch.setenv("MY_HOME_DIR", "/home/testuser")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "target.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "^HOME=.*$"
+                        replacement: "HOME=${{MY_HOME_DIR}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Substitute
+        assert entries[0].substitutions is not None
+        assert len(entries[0].substitutions) == 1
+        assert entries[0].substitutions[0][1] == "HOME=/home/testuser"
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_missing_jinja_variable_raises_error(self, tmp_path: Path) -> None:
+        """Test that missing Jinja variables in replacement raise ValueError."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "target.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "old"
+                        replacement: "{{{{ undefined_var }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            ResolveEntries(env, [config_file])
+
+        assert str(exc_info.value) == textwrap.dedent(
+            f"""\
+            The following variables are used in the configuration but are not defined:
+
+                '{config_file}':
+                    - undefined_var
+
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_with_jinja_variable_in_dest(self, tmp_path: Path) -> None:
+        """Test Substitute action with Jinja variable in destination path."""
+
+        env = Environment()
+        env.globals["config_dir"] = str(tmp_path / "configs")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: null
+                    dest: "{{ config_dir }}/target.txt"
+                    substitutions:
+                      - pattern: "old"
+                        replacement: "new"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dest == (tmp_path / "configs" / "target.txt").resolve()
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_combined_with_other_actions(self, tmp_path: Path) -> None:
+        """Test config with both Substitute and other action types."""
+
+        env = Environment()
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest1 = tmp_path / "dest1.txt"
+        dest2 = tmp_path / "dest2.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest1.as_posix()}
+                  - source: null
+                    dest: {dest2.as_posix()}
+                    substitutions:
+                      - pattern: "foo"
+                        replacement: "bar"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 2
+        assert entries[0].action == Action.Link
+        assert entries[0].source == source_file.resolve()
+        assert entries[1].action == Action.Substitute
+        assert entries[1].source is None
+
 
 # ----------------------------------------------------------------------
 class TestInstallEntries:
@@ -984,6 +1224,275 @@ class TestInstallEntries:
             """,
         )
 
+    # ----------------------------------------------------------------------
+    def test_substitute_action_basic(self, tmp_path: Path) -> None:
+        """Test that Substitute action applies regex substitutions to existing file."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("Hello old_value World", encoding="utf-8")
+
+        substitutions = [(re.compile("old_value", re.MULTILINE), "new_value")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert dest_path.read_text(encoding="utf-8") == "Hello new_value World"
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_multiple_patterns(self, tmp_path: Path) -> None:
+        """Test Substitute action with multiple regex patterns."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("foo bar baz", encoding="utf-8")
+
+        substitutions = [
+            (re.compile("foo", re.MULTILINE), "FOO"),
+            (re.compile("bar", re.MULTILINE), "BAR"),
+            (re.compile("baz", re.MULTILINE), "BAZ"),
+        ]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert dest_path.read_text(encoding="utf-8") == "FOO BAR BAZ"
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_regex_pattern(self, tmp_path: Path) -> None:
+        """Test Substitute action with complex regex pattern."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text(
+            textwrap.dedent(
+                """\
+                # Comment line
+                export EMAIL=old@example.com
+                export NAME=oldname
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        substitutions = [
+            (re.compile(r"^export EMAIL=.*$", re.MULTILINE), "export EMAIL=new@example.com"),
+            (re.compile(r"^#.*$", re.MULTILINE), "# Updated comment"),
+        ]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert dest_path.read_text(encoding="utf-8") == textwrap.dedent(
+            """\
+            # Updated comment
+            export EMAIL=new@example.com
+            export NAME=oldname
+            """,
+        )
+        assert "Substituted" in content
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_multiline_content(self, tmp_path: Path) -> None:
+        """Test Substitute action on multiline file content."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text(
+            textwrap.dedent(
+                """\
+                Line 1: value1
+                Line 2: value2
+                Line 3: value1
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        substitutions = [(re.compile("value1", re.MULTILINE), "REPLACED")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        assert dest_path.read_text(encoding="utf-8") == textwrap.dedent(
+            """\
+            Line 1: REPLACED
+            Line 2: value2
+            Line 3: REPLACED
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_dry_run(self, tmp_path: Path) -> None:
+        """Test that dry_run=True does not modify the file."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("original content", encoding="utf-8")
+
+        substitutions = [(re.compile("original", re.MULTILINE), "modified")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries, dry_run=True)
+
+        content = cast(str, next(dm_and_content))
+
+        assert dest_path.read_text(encoding="utf-8") == "original content"
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted (dry_run))
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_dest_does_not_exist(self, tmp_path: Path) -> None:
+        """Test Substitute action error when destination does not exist."""
+
+        dest_path = tmp_path / "nonexistent.txt"
+
+        substitutions = [(re.compile("old", re.MULTILINE), "new")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_path}' (1 of 1)...
+                ERROR: Destination does not exist.
+              DONE! (-1, <scrubbed duration>)
+            DONE! (-1, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_dest_not_file(self, tmp_path: Path) -> None:
+        """Test Substitute action error when destination is not a file."""
+
+        dest_dir = tmp_path / "target_dir"
+        dest_dir.mkdir()
+
+        substitutions = [(re.compile("old", re.MULTILINE), "new")]
+        entries = [Entry(Action.Substitute, None, dest_dir, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_dir}' (1 of 1)...
+                ERROR: Destination is not a file.
+              DONE! (-1, <scrubbed duration>)
+            DONE! (-1, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_no_match(self, tmp_path: Path) -> None:
+        """Test Substitute action when pattern does not match anything."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("Hello World", encoding="utf-8")
+
+        substitutions = [(re.compile("nonexistent", re.MULTILINE), "replacement")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        # File should remain unchanged
+        assert dest_path.read_text(encoding="utf-8") == "Hello World"
+        assert "Substituted" in content
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_empty_replacement(self, tmp_path: Path) -> None:
+        """Test Substitute action with empty replacement (deletion)."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text(
+            textwrap.dedent(
+                """\
+                # This is a comment
+                actual_content
+                # Another comment
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        substitutions = [(re.compile(r"^#.*\n", re.MULTILINE), "")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        assert dest_path.read_text(encoding="utf-8") == "actual_content\n"
+
+    # ----------------------------------------------------------------------
+    def test_substitute_action_with_capture_groups(self, tmp_path: Path) -> None:
+        """Test Substitute action with regex capture groups in replacement."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("name=john, name=jane", encoding="utf-8")
+
+        substitutions = [(re.compile(r"name=(\w+)", re.MULTILINE), r"user=\1")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        assert dest_path.read_text(encoding="utf-8") == "user=john, user=jane"
+
 
 # ----------------------------------------------------------------------
 class TestReverseSyncEntries:
@@ -1055,12 +1564,39 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped SymLink)
+              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Symlink)
             DONE! (0, <scrubbed duration>)
             """,
         )
         # Source should remain unchanged
         assert source_file.read_text(encoding="utf-8") == "source content"
+
+    # ----------------------------------------------------------------------
+    def test_skip_substitute_action(self, tmp_path: Path) -> None:
+        """Test that Substitute action entries are skipped."""
+
+        dest_path = tmp_path / "target.txt"
+        dest_path.write_text("some content", encoding="utf-8")
+
+        substitutions = [(re.compile("some", re.MULTILINE), "other")]
+        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Substitution)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+        # File should remain unchanged (reverse sync doesn't modify substituted files)
+        assert dest_path.read_text(encoding="utf-8") == "some content"
 
     # ----------------------------------------------------------------------
     def test_copy_action_file_no_changes(self, tmp_path: Path) -> None:
@@ -1534,7 +2070,7 @@ class TestReverseSyncEntries:
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied file)
               Processing '{dest2}' (2 of 3)...DONE! (0, <scrubbed duration>, No changes detected)
-              Processing '{dest3}' (3 of 3)...DONE! (0, <scrubbed duration>, Skipped SymLink)
+              Processing '{dest3}' (3 of 3)...DONE! (0, <scrubbed duration>, Skipped Symlink)
             DONE! (0, <scrubbed duration>)
             """,
         )
