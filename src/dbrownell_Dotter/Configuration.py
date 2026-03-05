@@ -12,14 +12,35 @@ from cattrs import structure
 
 # ----------------------------------------------------------------------
 @define(frozen=True)
+class Substitution:
+    """Represents a single regex substitution to apply."""
+
+    pattern: str
+    """Regex pattern to match."""
+
+    replacement: str
+    """Replacement string. May include environment variables or jinja2 template variables."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True)
 class ConfigurationEntry:
     """Represents a single entry in the configuration file."""
 
-    source: Path
-    """Relative path to the source file/directory"""
+    source: Path | None
+    """Relative path to the source file/directory. None for substitute-only entries."""
 
     dest: str
-    """Value may include environment variables or jinja2 template variables"""
+    """Value may include environment variables or jinja2 template variables."""
+
+    substitutions: list[Substitution] | None = None
+    """List of regex substitutions to apply to an existing file."""
+
+    # ----------------------------------------------------------------------
+    def __attrs_post_init__(self) -> None:
+        assert (self.source is not None and self.substitutions is None) or (
+            self.source is None and self.substitutions
+        ), "Exactly one of 'source' or 'substitutions' must be specified."
 
 
 # ----------------------------------------------------------------------
