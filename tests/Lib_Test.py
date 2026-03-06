@@ -74,8 +74,8 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].action == Action.Link
-        assert entries[0].source == source_file.resolve()
-        assert entries[0].dest == dest_path.resolve()
+        assert entries[0].source == source_file.absolute()
+        assert entries[0].dest == dest_path.absolute()
 
     # ----------------------------------------------------------------------
     @pytest.mark.skipif(
@@ -103,8 +103,8 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].action == Action.Copy
-        assert entries[0].source == Path("C:/source.txt").resolve()
-        assert entries[0].dest == Path("D:/dest.txt").resolve()
+        assert entries[0].source == Path("C:/source.txt").absolute()
+        assert entries[0].dest == Path("D:/dest.txt").absolute()
 
     # ----------------------------------------------------------------------
     def test_write_action_jinja_template(self, tmp_path: Path) -> None:
@@ -134,9 +134,9 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
-        assert entries[0].source == template_file.resolve()
+        assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Hello World!"
-        assert entries[0].dest == dest_path.resolve()
+        assert entries[0].dest == dest_path.absolute()
 
     # ----------------------------------------------------------------------
     def test_write_action_jinja2_extension(self, tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
-        assert entries[0].source == template_file.resolve()
+        assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Value: 42"
 
     # ----------------------------------------------------------------------
@@ -197,7 +197,7 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
-        assert entries[0].source == template_file.resolve()
+        assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Item: test"
 
     # ----------------------------------------------------------------------
@@ -226,7 +226,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].dest == (tmp_path / "output_folder" / "dest.txt").resolve()
+        assert entries[0].dest == (tmp_path / "output_folder" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
     def test_environment_variable_in_dest(self, tmp_path: Path, monkeypatch) -> None:
@@ -254,7 +254,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].dest == (tmp_path / "env_folder" / "dest.txt").resolve()
+        assert entries[0].dest == (tmp_path / "env_folder" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
     def test_environment_variable_in_template_content(self, tmp_path: Path, monkeypatch) -> None:
@@ -283,7 +283,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].source == template_file.resolve()
+        assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Env: environment_value"
 
     # ----------------------------------------------------------------------
@@ -441,10 +441,10 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config1, config2])
 
         assert len(entries) == 2
-        assert entries[0].source == source1.resolve()
-        assert entries[0].dest == dest1.resolve()
-        assert entries[1].source == source2.resolve()
-        assert entries[1].dest == dest2.resolve()
+        assert entries[0].source == source1.absolute()
+        assert entries[0].dest == dest1.absolute()
+        assert entries[1].source == source2.absolute()
+        assert entries[1].dest == dest2.absolute()
 
     # ----------------------------------------------------------------------
     def test_multiple_entries_in_single_config(self, tmp_path: Path) -> None:
@@ -512,7 +512,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].source == template_file.resolve()
+        assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Jinja: jinja_part, Env: env_part"
 
     # ----------------------------------------------------------------------
@@ -544,7 +544,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].source == source_file.resolve()
+        assert entries[0].source == source_file.absolute()
 
     # ----------------------------------------------------------------------
     def test_entry_skipped_when_dest_has_missing_vars(self, tmp_path: Path) -> None:
@@ -652,7 +652,7 @@ class TestResolveEntries:
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
         assert entries[0].source is None
-        assert entries[0].dest == dest_path.resolve()
+        assert entries[0].dest == dest_path.absolute()
         assert entries[0].substitutions is not None
         assert len(entries[0].substitutions) == 1
         assert entries[0].substitutions[0][0].pattern == "old_value"
@@ -824,7 +824,39 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file])
 
         assert len(entries) == 1
-        assert entries[0].dest == (tmp_path / "configs" / "target.txt").resolve()
+        assert entries[0].dest == (tmp_path / "configs" / "target.txt").absolute()
+
+    # ----------------------------------------------------------------------
+    def test_configuration_file_dir_available_in_template(self, tmp_path: Path) -> None:
+        """Test that configuration_file_dir is available as a Jinja variable."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        template_file = config_dir / "template.txt.jinja"
+        template_file.write_text("Config dir: {{ configuration_file_dir }}", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "output.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: template.txt.jinja
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Write
+        assert entries[0].rendered_content == f"Config dir: {config_dir}"
 
     # ----------------------------------------------------------------------
     def test_substitute_action_combined_with_other_actions(self, tmp_path: Path) -> None:
@@ -859,7 +891,7 @@ class TestResolveEntries:
 
         assert len(entries) == 2
         assert entries[0].action == Action.Link
-        assert entries[0].source == source_file.resolve()
+        assert entries[0].source == source_file.absolute()
         assert entries[1].action == Action.Substitute
         assert entries[1].source is None
 
@@ -886,7 +918,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -913,7 +945,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -945,7 +977,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -973,7 +1005,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Linked)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Linked)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -999,7 +1031,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Already exists)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Already exists)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1025,7 +1057,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...
+              '{dest_path}' (1 of 1)...
                 Removing...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote)
             DONE! (0, <scrubbed duration>)
@@ -1058,7 +1090,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...
+              '{dest_path}' (1 of 1)...
                 Removing...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied)
             DONE! (0, <scrubbed duration>)
@@ -1084,7 +1116,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote (dry_run))
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote (dry_run))
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1110,7 +1142,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...
+              '{dest_path}' (1 of 1)...
                 Removing (dry_run)...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote (dry_run))
             DONE! (0, <scrubbed duration>)
@@ -1145,8 +1177,8 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest1}' (1 of 2)...DONE! (0, <scrubbed duration>, Wrote)
-              Processing '{dest2}' (2 of 2)...DONE! (0, <scrubbed duration>, Copied)
+              '{dest1}' (1 of 2)...DONE! (0, <scrubbed duration>, Wrote)
+              '{dest2}' (2 of 2)...DONE! (0, <scrubbed duration>, Copied)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1171,7 +1203,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1219,7 +1251,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Linked)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Linked)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1245,7 +1277,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1275,7 +1307,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1371,7 +1403,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted (dry_run))
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Substituted (dry_run))
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1395,7 +1427,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...
+              '{dest_path}' (1 of 1)...
                 ERROR: Destination does not exist.
               DONE! (-1, <scrubbed duration>)
             DONE! (-1, <scrubbed duration>)
@@ -1422,7 +1454,7 @@ class TestInstallEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 ERROR: Destination is not a file.
               DONE! (-1, <scrubbed duration>)
             DONE! (-1, <scrubbed duration>)
@@ -1475,6 +1507,70 @@ class TestInstallEntries:
         InstallEntries(dm, entries)
 
         assert dest_path.read_text(encoding="utf-8") == "actual_content\n"
+
+    # ----------------------------------------------------------------------
+    def test_dest_broken_symlink_no_force(self, tmp_path: Path) -> None:
+        """Test that broken symlink dest is skipped when force=False."""
+
+        source_path = tmp_path / "template.txt.jinja"
+        dest_path = tmp_path / "output.txt"
+
+        # Create a symlink to a non-existent target (broken symlink)
+        nonexistent_target = tmp_path / "nonexistent_target.txt"
+        dest_path.symlink_to(nonexistent_target)
+
+        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries, force=False)
+
+        content = cast(str, next(dm_and_content))
+
+        # The broken symlink should still exist
+        assert dest_path.is_symlink()
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Already exists)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_dest_broken_symlink_with_force(self, tmp_path: Path) -> None:
+        """Test that broken symlink dest is removed and recreated when force=True."""
+
+        source_path = tmp_path / "template.txt.jinja"
+        dest_path = tmp_path / "output.txt"
+
+        # Create a symlink to a non-existent target (broken symlink)
+        nonexistent_target = tmp_path / "nonexistent_target.txt"
+        dest_path.symlink_to(nonexistent_target)
+
+        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries, force=True)
+
+        content = cast(str, next(dm_and_content))
+
+        # The broken symlink should be replaced with the new file
+        assert not dest_path.is_symlink()
+        assert dest_path.is_file()
+        assert dest_path.read_text(encoding="utf-8") == "new content"
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_path}' (1 of 1)...
+                Removing...DONE! (0, <scrubbed duration>)
+              DONE! (0, <scrubbed duration>, Wrote)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
 
     # ----------------------------------------------------------------------
     def test_substitute_action_with_capture_groups(self, tmp_path: Path) -> None:
@@ -1535,7 +1631,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...
+              '{dest_path}' (1 of 1)...
                 ERROR: The destination does not exist.
               DONE! (-1, <scrubbed duration>)
             DONE! (-1, <scrubbed duration>)
@@ -1564,7 +1660,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Symlink)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Symlink)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1591,7 +1687,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Substitution)
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Substitution)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1620,7 +1716,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
+              '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1649,7 +1745,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied file)
             DONE! (0, <scrubbed duration>)
@@ -1681,7 +1777,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied file)
             DONE! (0, <scrubbed duration>)
@@ -1714,7 +1810,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
+              '{dest_dir}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1743,7 +1839,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied directory)
             DONE! (0, <scrubbed duration>)
@@ -1777,7 +1873,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied directory)
             DONE! (0, <scrubbed duration>)
@@ -1810,7 +1906,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied directory)
             DONE! (0, <scrubbed duration>)
@@ -1842,7 +1938,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
+              '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, No changes detected)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -1871,7 +1967,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote template)
             DONE! (0, <scrubbed duration>)
@@ -1902,7 +1998,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 ERROR: Destination is not a file.
               DONE! (-1, <scrubbed duration>)
             DONE! (-1, <scrubbed duration>)
@@ -1931,7 +2027,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote template)
             DONE! (0, <scrubbed duration>)
@@ -1964,7 +2060,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote template)
             DONE! (0, <scrubbed duration>)
@@ -1995,7 +2091,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied file (dry_run))
+              '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, Copied file (dry_run))
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -2024,7 +2120,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote template (dry_run))
+              '{dest_file}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote template (dry_run))
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -2066,11 +2162,11 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest1}' (1 of 3)...
+              '{dest1}' (1 of 3)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied file)
-              Processing '{dest2}' (2 of 3)...DONE! (0, <scrubbed duration>, No changes detected)
-              Processing '{dest3}' (3 of 3)...DONE! (0, <scrubbed duration>, Skipped Symlink)
+              '{dest2}' (2 of 3)...DONE! (0, <scrubbed duration>, No changes detected)
+              '{dest3}' (3 of 3)...DONE! (0, <scrubbed duration>, Skipped Symlink)
             DONE! (0, <scrubbed duration>)
             """,
         )
@@ -2107,7 +2203,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_dir}' (1 of 1)...
+              '{dest_dir}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Copied directory)
             DONE! (0, <scrubbed duration>)
@@ -2140,7 +2236,7 @@ class TestReverseSyncEntries:
         assert content == textwrap.dedent(
             f"""\
             Heading...
-              Processing '{dest_file}' (1 of 1)...
+              '{dest_file}' (1 of 1)...
                 Removing source content...DONE! (0, <scrubbed duration>)
               DONE! (0, <scrubbed duration>, Wrote template)
             DONE! (0, <scrubbed duration>)
