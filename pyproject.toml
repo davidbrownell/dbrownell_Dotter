@@ -34,7 +34,7 @@ classifiers = [
 text = "MIT"
 
 [project.scripts]
-dbrownell_dotter = "dbrownell_Dotter:__main__.app"
+dbrownell_Dotter = "dbrownell_Dotter:__main__.app"
 
 [project.urls]
 Homepage = "https://github.com/davidbrownell/dbrownell_Dotter"

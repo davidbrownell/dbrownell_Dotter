@@ -85,11 +85,12 @@ def Install(
         with dm.Nested(
             "Resolving entries...",
             lambda: "{} found".format(inflect.no("entry", len(entries))),
+            suffix="\n",
         ):
             entries = Lib.ResolveEntries(env, config_filenames)
 
-        with dm.Nested("Processing entries..."):
-            Lib.InstallEntries(dm, entries, force=force, dry_run=dry_run)
+        with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as processing_dm:
+            Lib.InstallEntries(processing_dm, entries, force=force, dry_run=dry_run)
 
 
 # ----------------------------------------------------------------------
@@ -144,11 +145,12 @@ def ReverseSync(
         with dm.Nested(
             "Resolving entries...",
             lambda: "{} found".format(inflect.no("entry", len(entries))),
+            suffix="\n",
         ):
             entries = Lib.ResolveEntries(env, config_filenames)
 
-        with dm.Nested("Processing entries..."):
-            Lib.ReverseSyncEntries(dm, entries, var_dict, dry_run=dry_run)
+        with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as reverse_sync_dm:
+            Lib.ReverseSyncEntries(reverse_sync_dm, entries, var_dict, dry_run=dry_run)
 
 
 # ----------------------------------------------------------------------

@@ -65,7 +65,7 @@ class Entry:
 
 
 # ----------------------------------------------------------------------
-def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:
+def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:  # noqa: PLR0915
     """Resolve the configuration data into a list of entries that can be processed."""
 
     results: list[Entry] = []
@@ -84,6 +84,8 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
     # ----------------------------------------------------------------------
 
     for config_filename in config_filenames:
+        env.globals["configuration_file_dir"] = config_filename.parent
+
         config = Configuration.FromFile(config_filename)
 
         for entry in config.entries:
@@ -100,12 +102,12 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
                 ProcessMissingVars(config, config_filename, this_missing_vars)
                 has_errors = True
             else:
-                dest = Path(_Populate(env, entry.dest)).expanduser().resolve()
+                dest = Path(_Populate(env, entry.dest)).expanduser().absolute()
 
             if entry.source is not None:
                 # We are looking at a Write, Link, or Copy
 
-                source = (config_filename.parent / entry.source).expanduser().resolve()
+                source = (config_filename.parent / entry.source).expanduser().absolute()
 
                 # Process the source if it is a template
                 if source.suffix in [".jinja", ".jinja2", ".j2"]:
@@ -190,7 +192,7 @@ def InstallEntries(  # noqa: C901, PLR0915
         action_desc: str | None = None
 
         with dm.Nested(
-            "Processing '{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
+            "'{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
             lambda: (
                 None if action_desc is None else action_template.format(action_desc)  # noqa: B023
             ),
@@ -200,14 +202,16 @@ def InstallEntries(  # noqa: C901, PLR0915
                 if not entry.dest.exists():
                     entry_dm.WriteError("Destination does not exist.")
                     continue
-            elif entry.dest.exists():
+            elif entry.dest.exists() or entry.dest.is_symlink():
                 if force:
                     with entry_dm.Nested("Removing{}...".format(" (dry_run)" if dry_run else "")):
                         if not dry_run:
-                            if entry.dest.is_file():
+                            if entry.dest.is_file() or entry.dest.is_symlink():
                                 entry.dest.unlink()
-                            else:
+                            elif entry.dest.is_dir():
                                 shutil.rmtree(entry.dest)
+                            else:
+                                assert False, entry.dest  # noqa: B011, PT015  # pragma: no cover
                 else:
                     action_desc = "Already exists"
                     continue
@@ -286,7 +290,7 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
         action_desc: str | None = None
 
         with dm.Nested(
-            "Processing '{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
+            "'{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
             lambda: None if action_desc is None else action_template.format(action_desc),  # noqa: B023
         ) as entry_dm:
             if not entry.dest.exists():
@@ -345,9 +349,11 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
                 with entry_dm.Nested("Removing source content..."):
                     if entry.source.is_file():
                         entry.source.unlink()
-                    else:
+                    elif entry.source.is_dir():
                         assert entry.source.is_dir(), entry.source
                         shutil.rmtree(entry.source)
+                    else:
+                        assert False, entry.source  # noqa: B011, PT015  # pragma: no cover
 
                 action()
 
