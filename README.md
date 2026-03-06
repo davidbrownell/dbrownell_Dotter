@@ -25,14 +25,91 @@
 - [License](#license)
 
 ## Overview
-TODO: Complete this section
+`dbrownell_Dotter` is a declarative dotfile management tool that helps you install, synchronize, and manage configuration files across your system. It supports:
+
+- **File installation** via copying, symlinking, or template rendering
+- **Jinja2 templating** for dynamic configuration files
+- **Variable substitution** from command-line arguments or environment variables
+- **Regex-based substitutions** for modifying existing files in-place
+- **Reverse synchronization** to push manual changes back to source files
+
+Configuration is defined in YAML or JSON5 files, making it easy to version control and share your dotfile setup. See [davidbrownell/dotfiles](https://github.com/davidbrownell/dotfiles) for an example of such a configuration.
 
 ### How to use `dbrownell_Dotter`
-TODO: Complete this section
+
+#### Basic Commands
+
+**Install dotfiles:**
+```bash
+uvx dbrownell_Dotter Install <config_file(s)> [OPTIONS]
+```
+
+**Reverse sync changes back to source:**
+```bash
+uvx dbrownell_Dotter ReverseSync <config_file(s)> [OPTIONS]
+```
+
+**Common options:**
+- `--var key=value` - Pass template variables (can be used multiple times)
+- `--dry-run` - Preview changes without modifying files
+- `--verbose` - Show verbose output
+- `--debug` - Show debug information
+
+#### Variables
+
+Variables can be used in configuration files and jinja templates.
+
+| Variable Type | Format |
+| --- | --- |
+| Environment Variable | `${VAR_NAME}` |
+| Command Line Variable | `{{ VAR_NAME }}` |
+
+#### Configuration File Format
+
+```yaml
+variable_definitions:
+  username: "Your username (ex: `john`)"
+  email: "Your email address (ex: `john@example.com`)"
+
+entries:
+  # Simple file copy/link
+  - source: my_config.txt
+    dest: ~/.config/myapp/config.txt
+
+  # Jinja2 template (auto-detected by .jinja, .jinja2, or .j2 extension)
+  - source: bashrc.jinja
+    dest: ~/.bashrc
+
+  # Regex substitution on existing file
+  - source: null
+    dest: /etc/myapp/config.conf
+    substitutions:
+      - pattern: "^EMAIL=.*$"
+        replacement: "EMAIL={{ email }}"
+```
+
+#### Examples
+
+**Install with variables:**
+```bash
+uvx dbrownell_Dotter Install config.yaml --var username=john --var email=john@example.com
+```
+
+**Preview changes before installing:**
+```bash
+uvx dbrownell_Dotter Install config.yaml --dry-run
+```
+
+**Sync manual edits back to source files:**
+```bash
+uvx dbrownell_Dotter ReverseSync config.yaml --var username=john
+```
 
 <!-- Content below this delimiter will be copied to the generated README.md file. DO NOT REMOVE THIS COMMENT, as it will cause regeneration to fail. -->
 
 ## Installation
+
+Note that these steps are not required when invoking `dbrownell_Dotter` via `uvx`.
 
 | Installation Method | Command |
 | --- | --- |
