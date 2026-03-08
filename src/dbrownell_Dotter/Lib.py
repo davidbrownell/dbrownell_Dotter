@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from attrs import define
+from dbrownell_Common.ContextlibEx import ExitStack
 from dbrownell_Common import TextwrapEx
 from jinja2 import Environment, meta
 
@@ -63,9 +64,12 @@ class Entry:
     substitutions: list[tuple[re.Pattern[str], str]] | None = None
     """List of (pattern, rendered_replacement) tuples for Substitute actions."""
 
+    dynamic_variables: dict[str, object] | None = None
+    """Dynamic variables used when rendering this entry's content. These variables will be added to the jinja environment's global variables."""
+
 
 # ----------------------------------------------------------------------
-def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:  # noqa: PLR0915
+def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:  # noqa: C901, PLR0915
     """Resolve the configuration data into a list of entries that can be processed."""
 
     results: list[Entry] = []
@@ -84,70 +88,95 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
     # ----------------------------------------------------------------------
 
     for config_filename in config_filenames:
-        env.globals["configuration_file_dir"] = config_filename.parent
+        # Create the dynamic variables
+        dynamic_variables: dict[str, object] = {
+            "configuration_file_dir": config_filename.parent,
+        }
 
-        config = Configuration.FromFile(config_filename)
+        # Apply the dynamic variables to the Jinja environment
+        for key, value in dynamic_variables.items():
+            assert key not in env.globals, key
+            env.globals[key] = value
 
-        for entry in config.entries:
-            has_errors = False
+        # ----------------------------------------------------------------------
+        def RemoveDynamicVariables() -> None:
+            for key in dynamic_variables:  # noqa: B023
+                del env.globals[key]
 
-            action: Action | None = None
-            source: Path | None = None
-            dest: Path | None = None
-            rendered_content: str | None = None
-            substitutions: list[tuple[re.Pattern[str], str]] | None = None
+        # ----------------------------------------------------------------------
 
-            # Process the dest
-            if this_missing_vars := meta.find_undeclared_variables(env.parse(entry.dest)):
-                ProcessMissingVars(config, config_filename, this_missing_vars)
-                has_errors = True
-            else:
-                dest = Path(_Populate(env, entry.dest)).expanduser().absolute()
+        with ExitStack(RemoveDynamicVariables):
+            config = Configuration.FromFile(config_filename)
 
-            if entry.source is not None:
-                # We are looking at a Write, Link, or Copy
+            for entry in config.entries:
+                has_errors = False
 
-                source = (config_filename.parent / entry.source).expanduser().absolute()
+                action: Action | None = None
+                source: Path | None = None
+                dest: Path | None = None
+                rendered_content: str | None = None
+                substitutions: list[tuple[re.Pattern[str], str]] | None = None
 
-                # Process the source if it is a template
-                if source.suffix in [".jinja", ".jinja2", ".j2"]:
-                    action = Action.Write
+                # Process the dest
+                if this_missing_vars := meta.find_undeclared_variables(env.parse(entry.dest)):
+                    ProcessMissingVars(config, config_filename, this_missing_vars)
+                    has_errors = True
+                else:
+                    dest = Path(_Populate(env, entry.dest)).expanduser().absolute()
 
-                    content = source.read_text(encoding="utf-8")
+                if entry.source is not None:
+                    # We are looking at a Write, Link, or Copy
 
-                    if this_missing_vars := meta.find_undeclared_variables(env.parse(content)):
-                        ProcessMissingVars(config, source, this_missing_vars)
-                        has_errors = True
-                    else:
-                        rendered_content = _Populate(env, content)
-                elif dest:
-                    action = Action.Link if source.drive == dest.drive else Action.Copy
-            else:
-                # We are looking at a Substitute
-                assert entry.substitutions, entry
+                    source = (config_filename.parent / entry.source).expanduser().absolute()
 
-                action = Action.Substitute
-                resolved_substitutions: list[tuple[re.Pattern[str], str]] = []
+                    # Process the source if it is a template
+                    if source.suffix in [".jinja", ".jinja2", ".j2"]:
+                        action = Action.Write
 
-                for sub in entry.substitutions:
-                    # Process the replacement string for Jinja/env vars
-                    if this_missing_vars := meta.find_undeclared_variables(env.parse(sub.replacement)):
-                        ProcessMissingVars(config, config_filename, this_missing_vars)
-                        has_errors = True
-                    else:
-                        resolved_substitutions.append(
-                            (
-                                re.compile(sub.pattern, re.MULTILINE),
-                                _Populate(env, sub.replacement),
-                            ),
+                        content = source.read_text(encoding="utf-8")
+
+                        if this_missing_vars := meta.find_undeclared_variables(env.parse(content)):
+                            ProcessMissingVars(config, source, this_missing_vars)
+                            has_errors = True
+                        else:
+                            rendered_content = _Populate(env, content)
+                    elif dest:
+                        action = Action.Link if source.drive == dest.drive else Action.Copy
+                else:
+                    # We are looking at a Substitute
+                    assert entry.substitutions, entry
+
+                    action = Action.Substitute
+                    resolved_substitutions: list[tuple[re.Pattern[str], str]] = []
+
+                    for sub in entry.substitutions:
+                        # Process the replacement string for Jinja/env vars
+                        if this_missing_vars := meta.find_undeclared_variables(env.parse(sub.replacement)):
+                            ProcessMissingVars(config, config_filename, this_missing_vars)
+                            has_errors = True
+                        else:
+                            resolved_substitutions.append(
+                                (
+                                    re.compile(sub.pattern, re.MULTILINE),
+                                    _Populate(env, sub.replacement),
+                                ),
+                            )
+
+                    substitutions = resolved_substitutions
+
+                if not has_errors:
+                    assert action
+                    assert dest
+                    results.append(
+                        Entry(
+                            action,
+                            source,
+                            dest,
+                            rendered_content,
+                            substitutions,
+                            dynamic_variables,
                         )
-
-                substitutions = resolved_substitutions
-
-            if not has_errors:
-                assert action
-                assert dest
-                results.append(Entry(action, source, dest, rendered_content, substitutions))
+                    )
 
     if all_missing_vars:
         sections: list[str] = [
@@ -332,7 +361,7 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
                     if untemplater is None:
                         untemplater = _Untemplater(template_vars)
 
-                    content = untemplater(entry.dest)
+                    content = untemplater(entry.dynamic_variables or {}, entry.dest)
 
                     action = lambda: entry.source.write_text(content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
                     action_desc = "Wrote template"
@@ -424,7 +453,9 @@ class _Untemplater:
         min_variable_length = 2
 
         environment_vars = [
-            (key, str(value)) for key, value in os.environ.items() if len(str(value)) >= min_variable_length
+            (key, str(value))
+            for key, value in os.environ.items()
+            if len(str(value)) >= min_variable_length and not str(value).isdigit()
         ]
         environment_vars = sorted(environment_vars, key=lambda x: len(x[1]), reverse=True)
 
@@ -439,7 +470,7 @@ class _Untemplater:
         self.template_vars = template_vars
 
     # ----------------------------------------------------------------------
-    def __call__(self, filename: Path) -> str:
+    def __call__(self, dynamic_variables: dict[str, object], filename: Path) -> str:
         content = filename.read_text(encoding="utf-8")
 
         for var, value in self.environment_vars:
@@ -447,5 +478,8 @@ class _Untemplater:
 
         for var, value in self.template_vars:
             content = content.replace(value, f"{{{{ {var} }}}}")
+
+        for var, value in sorted(dynamic_variables.items(), key=lambda x: len(str(x[1])), reverse=True):
+            content = content.replace(str(value), f"{{{{ {var} }}}}")
 
         return content

@@ -1,6 +1,7 @@
 import re
 import sys
 import textwrap
+import uuid
 
 from pathlib import Path
 from typing import cast
@@ -857,6 +858,133 @@ class TestResolveEntries:
         assert len(entries) == 1
         assert entries[0].action == Action.Write
         assert entries[0].rendered_content == f"Config dir: {config_dir}"
+
+    # ----------------------------------------------------------------------
+    def test_dynamic_variables_included_in_entry(self, tmp_path: Path) -> None:
+        """Test that dynamic_variables field is populated in Entry."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dynamic_variables is not None
+        assert "configuration_file_dir" in entries[0].dynamic_variables
+        assert entries[0].dynamic_variables["configuration_file_dir"] == config_dir
+
+    # ----------------------------------------------------------------------
+    def test_dynamic_variables_cleaned_up_after_config_processing(self, tmp_path: Path) -> None:
+        """Test that dynamic variables are removed from env.globals after processing each config file."""
+
+        env = Environment()
+
+        # Create two separate config directories
+        config_dir1 = tmp_path / "config1"
+        config_dir1.mkdir()
+
+        config_dir2 = tmp_path / "config2"
+        config_dir2.mkdir()
+
+        source1 = config_dir1 / "source1.txt"
+        source1.write_text("content1", encoding="utf-8")
+
+        source2 = config_dir2 / "source2.txt"
+        source2.write_text("content2", encoding="utf-8")
+
+        config1 = config_dir1 / "config.yaml"
+        dest1 = tmp_path / "dest1.txt"
+        config1.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source1.txt
+                    dest: {dest1.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        config2 = config_dir2 / "config.yaml"
+        dest2 = tmp_path / "dest2.txt"
+        config2.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source2.txt
+                    dest: {dest2.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        # Process both config files
+        entries = ResolveEntries(env, [config1, config2])
+
+        # Verify that each entry has its own dynamic_variables with correct config_file_dir
+        assert len(entries) == 2
+        assert (
+            entries[0].dynamic_variables
+            and entries[0].dynamic_variables["configuration_file_dir"] == config_dir1
+        )
+        assert (
+            entries[1].dynamic_variables
+            and entries[1].dynamic_variables["configuration_file_dir"] == config_dir2
+        )
+
+        # Verify that env.globals does not contain configuration_file_dir after processing
+        assert "configuration_file_dir" not in env.globals
+
+    # ----------------------------------------------------------------------
+    def test_dynamic_variables_in_dest_path(self, tmp_path: Path) -> None:
+        """Test that dynamic_variables like configuration_file_dir can be used in dest path."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: source.txt
+                    dest: "{{ configuration_file_dir }}/output/dest.txt"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dest == (config_dir / "output" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
     def test_substitute_action_combined_with_other_actions(self, tmp_path: Path) -> None:
@@ -2244,3 +2372,162 @@ class TestReverseSyncEntries:
         )
         # The longer path should be replaced first, not the shorter "user"
         assert source_template.read_text(encoding="utf-8") == "Path: {{ path }}"
+
+    # ----------------------------------------------------------------------
+    def test_write_action_untemplates_dynamic_variables(self, tmp_path: Path) -> None:
+        """Test that Write action properly untemplates dynamic variables from entry."""
+
+        source_template = tmp_path / "template.txt.jinja"
+        source_template.write_text("Config: {{ my_dynamic_var }}", encoding="utf-8")
+
+        dest_file = tmp_path / "output.txt"
+        # Use a dynamic value that won't conflict with environment variables
+        dynamic_value = str(uuid.uuid4()).replace("-", "")
+        dest_file.write_text(f"Config: {dynamic_value}", encoding="utf-8")
+
+        # Create entry with dynamic_variables populated
+        dynamic_vars = {"my_dynamic_var": dynamic_value}
+        entries = [
+            Entry(
+                Action.Write, source_template, dest_file, "Config: /original", dynamic_variables=dynamic_vars
+            )
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_file}' (1 of 1)...
+                Removing source content...DONE! (0, <scrubbed duration>)
+              DONE! (0, <scrubbed duration>, Wrote template)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+        # Source template should have the dynamic value replaced with template variable
+        assert source_template.read_text(encoding="utf-8") == "Config: {{ my_dynamic_var }}"
+
+    # ----------------------------------------------------------------------
+    def test_write_action_untemplates_dynamic_variables_with_other_vars(self, tmp_path: Path) -> None:
+        """Test that Write action untemplates both dynamic variables and template vars."""
+
+        source_template = tmp_path / "template.txt.jinja"
+        source_template.write_text("User: {{ username }}, Config: {{ my_config_path }}", encoding="utf-8")
+
+        dest_file = tmp_path / "output.txt"
+        # Use dynamic values that won't conflict with environment variables
+        dynamic_value = str(uuid.uuid4()).replace("-", "")
+        dest_file.write_text(f"User: john_doe, Config: {dynamic_value}", encoding="utf-8")
+
+        # Create entry with dynamic_variables populated
+        dynamic_vars = {"my_config_path": dynamic_value}
+        entries = [
+            Entry(
+                Action.Write,
+                source_template,
+                dest_file,
+                "User: original, Config: /original",
+                dynamic_variables=dynamic_vars,
+            )
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {"username": "john_doe"})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_file}' (1 of 1)...
+                Removing source content...DONE! (0, <scrubbed duration>)
+              DONE! (0, <scrubbed duration>, Wrote template)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+        # Both template vars and dynamic vars should be untemplated
+        assert (
+            source_template.read_text(encoding="utf-8")
+            == "User: {{ username }}, Config: {{ my_config_path }}"
+        )
+
+    # ----------------------------------------------------------------------
+    def test_write_action_dynamic_variables_none(self, tmp_path: Path) -> None:
+        """Test that Write action handles entry with dynamic_variables=None."""
+
+        source_template = tmp_path / "template.txt.jinja"
+        source_template.write_text("Hello {{ name }}!", encoding="utf-8")
+
+        dest_file = tmp_path / "output.txt"
+        dest_file.write_text("Hello john_doe!", encoding="utf-8")
+
+        # Entry without dynamic_variables (None)
+        entries = [Entry(Action.Write, source_template, dest_file, "Hello World!", dynamic_variables=None)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {"name": "john_doe"})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_file}' (1 of 1)...
+                Removing source content...DONE! (0, <scrubbed duration>)
+              DONE! (0, <scrubbed duration>, Wrote template)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+        # Source template should be untemplated with just template vars
+        assert source_template.read_text(encoding="utf-8") == "Hello {{ name }}!"
+
+    # ----------------------------------------------------------------------
+    def test_write_action_dynamic_variables_longer_replaced_first(self, tmp_path: Path) -> None:
+        """Test that longer dynamic variable values are replaced before shorter ones."""
+
+        source_template = tmp_path / "template.txt.jinja"
+        source_template.write_text("Path: {{ long_path }}", encoding="utf-8")
+
+        dest_file = tmp_path / "output.txt"
+        # Use dynamic values that won't conflict with environment variables
+        # The longer value contains the shorter value as a substring
+        long_value = "dynamic_base_path/subdir/nested"
+        short_value = "dynamic_base"
+        dest_file.write_text(f"Path: {long_value}", encoding="utf-8")
+
+        # Create entry with dynamic_variables where one value contains the other
+        dynamic_vars = {
+            "long_path": long_value,
+            "short_path": short_value,  # This value appears as a substring in the longer path
+        }
+        entries = [
+            Entry(Action.Write, source_template, dest_file, "Path: /original", dynamic_variables=dynamic_vars)
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_file}' (1 of 1)...
+                Removing source content...DONE! (0, <scrubbed duration>)
+              DONE! (0, <scrubbed duration>, Wrote template)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+        # The longer path should be replaced first, not the shorter substring
+        assert source_template.read_text(encoding="utf-8") == "Path: {{ long_path }}"
