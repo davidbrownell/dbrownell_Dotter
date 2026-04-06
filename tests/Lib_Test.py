@@ -112,7 +112,7 @@ class TestResolveEntries:
         """Test that Write action is used for .jinja template files."""
 
         env = Environment()
-        env.globals["name"] = "World"
+        env.globals["name"] = "World"  # ty: ignore[invalid-assignment]
 
         template_file = tmp_path / "template.txt.jinja"
         template_file.write_text("Hello {{ name }}!", encoding="utf-8")
@@ -144,7 +144,7 @@ class TestResolveEntries:
         """Test that Write action is used for .jinja2 template files."""
 
         env = Environment()
-        env.globals["value"] = "42"
+        env.globals["value"] = "42"  # ty: ignore[invalid-assignment]
 
         template_file = tmp_path / "template.txt.jinja2"
         template_file.write_text("Value: {{ value }}", encoding="utf-8")
@@ -175,7 +175,7 @@ class TestResolveEntries:
         """Test that Write action is used for .j2 template files."""
 
         env = Environment()
-        env.globals["item"] = "test"
+        env.globals["item"] = "test"  # ty: ignore[invalid-assignment]
 
         template_file = tmp_path / "template.txt.j2"
         template_file.write_text("Item: {{ item }}", encoding="utf-8")
@@ -206,7 +206,7 @@ class TestResolveEntries:
         """Test Jinja variable substitution in destination path."""
 
         env = Environment()
-        env.globals["folder"] = "output_folder"
+        env.globals["folder"] = "output_folder"  # ty: ignore[invalid-assignment]
 
         source_file = tmp_path / "source.txt"
         source_file.write_text("content", encoding="utf-8")
@@ -487,7 +487,7 @@ class TestResolveEntries:
         """Test combining Jinja variables and environment variables."""
 
         env = Environment()
-        env.globals["jinja_var"] = "jinja_part"
+        env.globals["jinja_var"] = "jinja_part"  # ty: ignore[invalid-assignment]
         monkeypatch.setenv("ENV_PART", "env_part")
 
         template_file = tmp_path / "template.txt.jinja"
@@ -552,7 +552,7 @@ class TestResolveEntries:
         """Test that entries with missing dest vars are skipped but other entries process."""
 
         env = Environment()
-        env.globals["defined_var"] = "value"
+        env.globals["defined_var"] = "value"  # ty: ignore[invalid-assignment]
 
         source1 = tmp_path / "source1.txt"
         source1.write_text("content1", encoding="utf-8")
@@ -704,7 +704,7 @@ class TestResolveEntries:
         """Test Substitute action with Jinja variable in replacement string."""
 
         env = Environment()
-        env.globals["email"] = "user@example.com"
+        env.globals["email"] = "user@example.com"  # ty: ignore[invalid-assignment]
 
         config_file = tmp_path / "config.yaml"
         dest_path = tmp_path / "target.txt"
@@ -804,7 +804,7 @@ class TestResolveEntries:
         """Test Substitute action with Jinja variable in destination path."""
 
         env = Environment()
-        env.globals["config_dir"] = str(tmp_path / "configs")
+        env.globals["config_dir"] = str(tmp_path / "configs")  # ty: ignore[invalid-assignment]
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
@@ -2386,7 +2386,7 @@ class TestReverseSyncEntries:
         dest_file.write_text(f"Config: {dynamic_value}", encoding="utf-8")
 
         # Create entry with dynamic_variables populated
-        dynamic_vars = {"my_dynamic_var": dynamic_value}
+        dynamic_vars: dict[str, object] = {"my_dynamic_var": dynamic_value}
         entries = [
             Entry(
                 Action.Write, source_template, dest_file, "Config: /original", dynamic_variables=dynamic_vars
@@ -2425,7 +2425,7 @@ class TestReverseSyncEntries:
         dest_file.write_text(f"User: john_doe, Config: {dynamic_value}", encoding="utf-8")
 
         # Create entry with dynamic_variables populated
-        dynamic_vars = {"my_config_path": dynamic_value}
+        dynamic_vars: dict[str, object] = {"my_config_path": dynamic_value}
         entries = [
             Entry(
                 Action.Write,
@@ -2505,7 +2505,7 @@ class TestReverseSyncEntries:
         dest_file.write_text(f"Path: {long_value}", encoding="utf-8")
 
         # Create entry with dynamic_variables where one value contains the other
-        dynamic_vars = {
+        dynamic_vars: dict[str, object] = {
             "long_path": long_value,
             "short_path": short_value,  # This value appears as a substring in the longer path
         }

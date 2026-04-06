@@ -68,7 +68,7 @@ def Install(
         flags=DoneManagerFlags.Create(verbose=verbose, debug=debug),
     ) as dm:
         # Parse variables into a dictionary
-        var_dict: dict[str, str] = {}
+        var_dict: dict = {}
         for var in variables or []:
             if "=" not in var:
                 msg = f"Variable '{var}' must be in the form key=value."
@@ -128,7 +128,8 @@ def ReverseSync(
         flags=DoneManagerFlags.Create(verbose=verbose, debug=debug),
     ) as dm:
         # Parse variables into a dictionary
-        var_dict: dict[str, object] = {}
+        var_dict: dict = {}
+
         for var in variables or []:
             if "=" not in var:
                 msg = f"Variable '{var}' must be in the form key=value."

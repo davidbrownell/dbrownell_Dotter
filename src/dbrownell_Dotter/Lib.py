@@ -8,7 +8,7 @@ import textwrap
 
 from enum import auto, Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import cast, TYPE_CHECKING
 
 from attrs import define
 from dbrownell_Common.ContextlibEx import ExitStack
@@ -96,7 +96,7 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
         # Apply the dynamic variables to the Jinja environment
         for key, value in dynamic_variables.items():
             assert key not in env.globals, key
-            env.globals[key] = value
+            env.globals[key] = value  # ty: ignore[invalid-assignment]
 
         # ----------------------------------------------------------------------
         def RemoveDynamicVariables() -> None:
@@ -363,7 +363,7 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
 
                     content = untemplater(entry.dynamic_variables or {}, entry.dest)
 
-                    action = lambda: entry.source.write_text(content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
+                    action = lambda: cast(None, entry.source.write_text(content, encoding="utf-8"))  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
                     action_desc = "Wrote template"
 
             else:
