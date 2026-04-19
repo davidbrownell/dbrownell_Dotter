@@ -15,6 +15,19 @@ class TestConfigurationEntry:
 
         assert entry.source == Path("foo/bar.txt")
         assert entry.dest == "/dest.txt"
+        assert entry.condition is None
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithCondition(self) -> None:
+        entry = ConfigurationEntry(
+            Path("foo/bar.txt"),
+            "/dest.txt",
+            condition="{{ os_name == 'Windows' }}",
+        )
+
+        assert entry.source == Path("foo/bar.txt")
+        assert entry.dest == "/dest.txt"
+        assert entry.condition == "{{ os_name == 'Windows' }}"
 
 
 # ----------------------------------------------------------------------
@@ -111,6 +124,33 @@ class TestConfiguration:
                 "/two.txt",
             ),
         ]
+
+    # ----------------------------------------------------------------------
+    def test_FromFileWithCondition(self, fs) -> None:
+        fs.create_file(
+            "config.yaml",
+            contents=textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: "windows.txt"
+                    dest: "/dest.txt"
+                    condition: "{{ os_name == 'Windows' }}"
+                  - source: "linux.txt"
+                    dest: "/dest.txt"
+                    condition: "{{ os_name == 'Linux' }}"
+                  - source: "always.txt"
+                    dest: "/always.txt"
+                """,
+            ),
+        )
+
+        config = Configuration.FromFile(Path("config.yaml"))
+
+        assert len(config.entries) == 3
+        assert config.entries[0].condition == "{{ os_name == 'Windows' }}"
+        assert config.entries[1].condition == "{{ os_name == 'Linux' }}"
+        assert config.entries[2].condition is None
 
     # ----------------------------------------------------------------------
     def test_FromFileDoesNotExist(self) -> None:

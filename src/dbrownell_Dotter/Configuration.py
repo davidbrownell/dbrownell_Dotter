@@ -36,6 +36,9 @@ class ConfigurationEntry:
     substitutions: list[Substitution] | None = None
     """List of regex substitutions to apply to an existing file."""
 
+    condition: str | None = None
+    """Optional jinja2 expression that must evaluate to true for this entry to be applied at runtime."""
+
     # ----------------------------------------------------------------------
     def __attrs_post_init__(self) -> None:
         assert (self.source is not None and self.substitutions is None) or (

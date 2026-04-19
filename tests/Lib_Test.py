@@ -1023,6 +1023,410 @@ class TestResolveEntries:
         assert entries[1].action == Action.Substitute
         assert entries[1].source is None
 
+    # ----------------------------------------------------------------------
+    def test_condition_true_includes_entry(self, tmp_path: Path) -> None:
+        """Test that an entry with a true condition is included."""
+
+        env = Environment()
+        env.globals["os_name"] = "Windows"  # ty: ignore[invalid-assignment]
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "{{{{ os_name == 'Windows' }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].source == source_file.absolute()
+
+    # ----------------------------------------------------------------------
+    def test_condition_false_excludes_entry(self, tmp_path: Path) -> None:
+        """Test that an entry with a false condition is excluded."""
+
+        env = Environment()
+        env.globals["os_name"] = "Linux"  # ty: ignore[invalid-assignment]
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "{{{{ os_name == 'Windows' }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 0
+
+    # ----------------------------------------------------------------------
+    def test_condition_none_includes_entry(self, tmp_path: Path) -> None:
+        """Test that an entry without a condition is included (backward compatibility)."""
+
+        env = Environment()
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+
+    # ----------------------------------------------------------------------
+    def test_condition_with_mixed_entries(self, tmp_path: Path) -> None:
+        """Test config with entries having different condition results."""
+
+        env = Environment()
+        env.globals["os_name"] = "Windows"  # ty: ignore[invalid-assignment]
+
+        source1 = tmp_path / "windows.txt"
+        source1.write_text("windows content", encoding="utf-8")
+
+        source2 = tmp_path / "linux.txt"
+        source2.write_text("linux content", encoding="utf-8")
+
+        source3 = tmp_path / "always.txt"
+        source3.write_text("always content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest1 = tmp_path / "dest1.txt"
+        dest2 = tmp_path / "dest2.txt"
+        dest3 = tmp_path / "dest3.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: windows.txt
+                    dest: {dest1.as_posix()}
+                    condition: "{{{{ os_name == 'Windows' }}}}"
+                  - source: linux.txt
+                    dest: {dest2.as_posix()}
+                    condition: "{{{{ os_name == 'Linux' }}}}"
+                  - source: always.txt
+                    dest: {dest3.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 2
+        assert entries[0].source == source1.absolute()
+        assert entries[1].source == source3.absolute()
+
+    # ----------------------------------------------------------------------
+    def test_condition_missing_variable_raises_error(self, tmp_path: Path) -> None:
+        """Test that missing variables in condition are reported as errors."""
+
+        env = Environment()
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions:
+                  undefined_var: "Description of the missing variable"
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "{{{{ undefined_var == 'value' }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="undefined_var"):
+            ResolveEntries(env, [config_file])
+
+    # ----------------------------------------------------------------------
+    def test_condition_truthy_values(self, tmp_path: Path) -> None:
+        """Test that Jinja2 truthy values are correctly evaluated."""
+
+        # In Jinja2 expressions: 'true' is a boolean literal, 1 is truthy,
+        # non-empty strings like 'yes' need quotes to be string literals
+        for truthy_value in ["true", "1", "'yes'", "'non-empty'"]:
+            env = Environment()
+
+            source_file = tmp_path / "source.txt"
+            source_file.write_text("content", encoding="utf-8")
+
+            config_file = tmp_path / "config.yaml"
+            dest_path = tmp_path / "dest.txt"
+            config_file.write_text(
+                textwrap.dedent(
+                    f"""\
+                    variable_definitions: {{}}
+                    entries:
+                      - source: source.txt
+                        dest: {dest_path.as_posix()}
+                        condition: "{truthy_value}"
+                    """,
+                ),
+                encoding="utf-8",
+            )
+
+            entries = ResolveEntries(env, [config_file])
+
+            assert len(entries) == 1, f"Expected entry for truthy value '{truthy_value}'"
+
+    # ----------------------------------------------------------------------
+    def test_condition_falsy_values(self, tmp_path: Path) -> None:
+        """Test that Jinja2 falsy values are correctly evaluated."""
+
+        # In Jinja2 expressions: 'false' is a boolean literal, 0 is falsy,
+        # empty string '' is falsy, none is falsy
+        for falsy_value in ["false", "0", "''", "none"]:
+            env = Environment()
+
+            source_file = tmp_path / "source.txt"
+            source_file.write_text("content", encoding="utf-8")
+
+            config_file = tmp_path / "config.yaml"
+            dest_path = tmp_path / "dest.txt"
+            config_file.write_text(
+                textwrap.dedent(
+                    f"""\
+                    variable_definitions: {{}}
+                    entries:
+                      - source: source.txt
+                        dest: {dest_path.as_posix()}
+                        condition: "{falsy_value}"
+                    """,
+                ),
+                encoding="utf-8",
+            )
+
+            entries = ResolveEntries(env, [config_file])
+
+            assert len(entries) == 0, f"Expected no entry for falsy value '{falsy_value}'"
+
+    # ----------------------------------------------------------------------
+    def test_condition_with_substitute_action(self, tmp_path: Path) -> None:
+        """Test that condition works with Substitute action entries."""
+
+        env = Environment()
+        env.globals["enable_substitution"] = "yes"  # ty: ignore[invalid-assignment]
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: null
+                    dest: {dest_path.as_posix()}
+                    substitutions:
+                      - pattern: "foo"
+                        replacement: "bar"
+                    condition: "{{{{ enable_substitution }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Substitute
+
+    # ----------------------------------------------------------------------
+    def test_condition_template_style(self, tmp_path: Path) -> None:
+        """Test condition with Jinja2 template-style syntax (with {{ }} wrappers)."""
+
+        env = Environment()
+        env.globals["os_name"] = "Windows"  # ty: ignore[invalid-assignment]
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "{{{{ os_name == 'Windows' }}}}"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].source == source_file.absolute()
+
+    # ----------------------------------------------------------------------
+    def test_condition_expression_style(self, tmp_path: Path) -> None:
+        """Test condition with plain expression syntax (without {{ }} wrappers)."""
+
+        env = Environment()
+        env.globals["os_name"] = "Windows"  # ty: ignore[invalid-assignment]
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "os_name == 'Windows'"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].source == source_file.absolute()
+
+    # ----------------------------------------------------------------------
+    def test_condition_both_styles_equivalent(self, tmp_path: Path) -> None:
+        """Test that template-style and expression-style conditions produce the same results."""
+
+        for condition in ["{{ os_name == 'Linux' }}", "os_name == 'Linux'"]:
+            env = Environment()
+            env.globals["os_name"] = "Windows"  # ty: ignore[invalid-assignment]
+
+            source_file = tmp_path / "source.txt"
+            source_file.write_text("content", encoding="utf-8")
+
+            config_file = tmp_path / "config.yaml"
+            dest_path = tmp_path / "dest.txt"
+            config_file.write_text(
+                textwrap.dedent(
+                    f"""\
+                    variable_definitions: {{}}
+                    entries:
+                      - source: source.txt
+                        dest: {dest_path.as_posix()}
+                        condition: "{condition}"
+                    """,
+                ),
+                encoding="utf-8",
+            )
+
+            entries = ResolveEntries(env, [config_file])
+
+            assert len(entries) == 0, f"Expected no entry for condition '{condition}' when os_name='Windows'"
+
+    # ----------------------------------------------------------------------
+    def test_condition_expression_boolean_evaluation(self, tmp_path: Path) -> None:
+        """Test that expression-style conditions properly evaluate boolean expressions."""
+
+        env = Environment()
+        env.globals["count"] = 5  # ty: ignore[invalid-assignment]
+        env.globals["enabled"] = True  # ty: ignore[invalid-assignment]
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        # Test numeric comparison
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "count > 3"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+        assert len(entries) == 1
+
+        # Test boolean variable
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "enabled"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+        assert len(entries) == 1
+
+        # Test combined expression
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "enabled and count > 3"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+        assert len(entries) == 1
+
 
 # ----------------------------------------------------------------------
 class TestInstallEntries:

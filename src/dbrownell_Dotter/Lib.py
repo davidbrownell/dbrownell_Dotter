@@ -109,6 +109,29 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
             config = Configuration.FromFile(config_filename)
 
             for entry in config.entries:
+                # Evaluate the condition if present
+                if entry.condition is not None:
+                    condition_expression = entry.condition.strip()
+
+                    # Support the documented expression syntax while remaining
+                    # compatible with existing template-style conditions.
+                    if condition_expression.startswith("{{") and condition_expression.endswith("}}"):
+                        condition_expression = condition_expression[2:-2].strip()
+
+                    if this_missing_vars := meta.find_undeclared_variables(
+                        env.parse("{{ " + condition_expression + " }}")
+                    ):
+                        ProcessMissingVars(config, config_filename, this_missing_vars)
+                        continue
+
+                    condition_result = env.compile_expression(
+                        condition_expression,
+                        undefined_to_none=False,
+                    )()
+
+                    if not bool(condition_result):
+                        continue
+
                 has_errors = False
 
                 action: Action | None = None
