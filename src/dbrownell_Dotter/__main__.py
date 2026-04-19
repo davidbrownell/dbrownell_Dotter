@@ -49,6 +49,13 @@ def Install(
         bool,
         typer.Option("--force", help="Overwrite existing files."),
     ] = False,
+    force_symbolic_links: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--force-symbolic-links",
+            help="Force symbolic links even when source and destination are on different drives.",
+        ),
+    ] = False,
     dry_run: Annotated[  # noqa: FBT002
         bool,
         typer.Option("--dry-run", help="Show what would be done without making changes."),
@@ -87,7 +94,11 @@ def Install(
             lambda: "{} found".format(inflect.no("entry", len(entries))),
             suffix="\n",
         ):
-            entries = Lib.ResolveEntries(env, config_filenames)
+            entries = Lib.ResolveEntries(
+                env,
+                config_filenames,
+                force_symbolic_links=force_symbolic_links,
+            )
 
         with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as processing_dm:
             Lib.InstallEntries(processing_dm, entries, force=force, dry_run=dry_run)
@@ -109,6 +120,13 @@ def ReverseSync(
             help="Jinja template variables in the form key=value. Can be specified multiple times.",
         ),
     ] = None,
+    force_symbolic_links: Annotated[  # noqa: FBT002
+        bool,
+        typer.Option(
+            "--force-symbolic-links",
+            help="Force symbolic links even when source and destination are on different drives.",
+        ),
+    ] = False,
     dry_run: Annotated[  # noqa: FBT002
         bool,
         typer.Option("--dry-run", help="Show what would be done without making changes."),
@@ -148,7 +166,11 @@ def ReverseSync(
             lambda: "{} found".format(inflect.no("entry", len(entries))),
             suffix="\n",
         ):
-            entries = Lib.ResolveEntries(env, config_filenames)
+            entries = Lib.ResolveEntries(
+                env,
+                config_filenames,
+                force_symbolic_links=force_symbolic_links,
+            )
 
         with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as reverse_sync_dm:
             Lib.ReverseSyncEntries(reverse_sync_dm, entries, var_dict, dry_run=dry_run)

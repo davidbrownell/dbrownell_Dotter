@@ -69,7 +69,12 @@ class Entry:
 
 
 # ----------------------------------------------------------------------
-def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry]:  # noqa: C901, PLR0915
+def ResolveEntries(  # noqa: C901, PLR0915
+    env: Environment,
+    config_filenames: list[Path],
+    *,
+    force_symbolic_links: bool = False,
+) -> list[Entry]:
     """Resolve the configuration data into a list of entries that can be processed."""
 
     results: list[Entry] = []
@@ -164,7 +169,11 @@ def ResolveEntries(env: Environment, config_filenames: list[Path]) -> list[Entry
                         else:
                             rendered_content = _Populate(env, content)
                     elif dest:
-                        action = Action.Link if source.drive == dest.drive else Action.Copy
+                        action = (
+                            Action.Link
+                            if (force_symbolic_links or source.drive == dest.drive)
+                            else Action.Copy
+                        )
                 else:
                     # We are looking at a Substitute
                     assert entry.substitutions, entry
