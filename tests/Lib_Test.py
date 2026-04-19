@@ -108,6 +108,65 @@ class TestResolveEntries:
         assert entries[0].dest == Path("D:/dest.txt").absolute()
 
     # ----------------------------------------------------------------------
+    @pytest.mark.skipif(
+        sys.platform != "win32", reason="Linux-based operating systems do not have multiple drives."
+    )
+    def test_force_symbolic_links_different_drives(self, tmp_path: Path) -> None:
+        """Test that force_symbolic_links=True forces Link action even on different drives."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: C:/source.txt
+                    dest: D:/dest.txt
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file], force_symbolic_links=True)
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Link
+        assert entries[0].source == Path("C:/source.txt").absolute()
+        assert entries[0].dest == Path("D:/dest.txt").absolute()
+
+    # ----------------------------------------------------------------------
+    def test_force_symbolic_links_same_drive(self, tmp_path: Path) -> None:
+        """Test that force_symbolic_links=True still uses Link action on same drive."""
+
+        env = Environment()
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file], force_symbolic_links=True)
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Link
+        assert entries[0].source == source_file.absolute()
+        assert entries[0].dest == dest_path.absolute()
+
+    # ----------------------------------------------------------------------
     def test_write_action_jinja_template(self, tmp_path: Path) -> None:
         """Test that Write action is used for .jinja template files."""
 

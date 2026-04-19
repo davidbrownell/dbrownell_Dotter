@@ -142,6 +142,46 @@ class TestInstall:
             assert process_kwargs["dry_run"] is True
 
     # ----------------------------------------------------------------------
+    def test_force_symbolic_links_option(self, tmp_path: Path) -> None:
+        """Test that --force-symbolic-links option is passed to ResolveEntries."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
+        ):
+            mock_resolve.return_value = []
+
+            result = runner.invoke(app, ["Install", str(config_file), "--force-symbolic-links"])
+
+            assert result.exit_code == 0
+
+            resolve_kwargs = mock_resolve.call_args[1]
+            assert resolve_kwargs["force_symbolic_links"] is True
+
+    # ----------------------------------------------------------------------
+    def test_force_symbolic_links_default_false(self, tmp_path: Path) -> None:
+        """Test that force_symbolic_links defaults to False."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
+        ):
+            mock_resolve.return_value = []
+
+            result = runner.invoke(app, ["Install", str(config_file)])
+
+            assert result.exit_code == 0
+
+            resolve_kwargs = mock_resolve.call_args[1]
+            assert resolve_kwargs["force_symbolic_links"] is False
+
+    # ----------------------------------------------------------------------
     def test_var_option_single(self, tmp_path: Path) -> None:
         """Test that --var option sets Jinja variables."""
 
@@ -404,6 +444,46 @@ class TestReverseSync:
 
             reverse_sync_kwargs = mock_reverse_sync.call_args[1]
             assert reverse_sync_kwargs["dry_run"] is True
+
+    # ----------------------------------------------------------------------
+    def test_force_symbolic_links_option(self, tmp_path: Path) -> None:
+        """Test that --force-symbolic-links option is passed to ResolveEntries."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
+        ):
+            mock_resolve.return_value = []
+
+            result = runner.invoke(app, ["ReverseSync", str(config_file), "--force-symbolic-links"])
+
+            assert result.exit_code == 0
+
+            resolve_kwargs = mock_resolve.call_args[1]
+            assert resolve_kwargs["force_symbolic_links"] is True
+
+    # ----------------------------------------------------------------------
+    def test_force_symbolic_links_default_false(self, tmp_path: Path) -> None:
+        """Test that force_symbolic_links defaults to False."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
+        ):
+            mock_resolve.return_value = []
+
+            result = runner.invoke(app, ["ReverseSync", str(config_file)])
+
+            assert result.exit_code == 0
+
+            resolve_kwargs = mock_resolve.call_args[1]
+            assert resolve_kwargs["force_symbolic_links"] is False
 
     # ----------------------------------------------------------------------
     def test_var_option_single(self, tmp_path: Path) -> None:
