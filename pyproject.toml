@@ -7,7 +7,7 @@ version = "0.0.0"
 #
 #   uv run python -m AutoGitSemVer.scripts.UpdatePythonVersion ./pyproject.toml ./src
 
-description = "Add your description here"
+description = "Tools to distribute dotfiles to multiple locations when provisioning a new machine."
 readme = "README.md"
 authors = [
     { name = "Dave Brownell", email = "github@davidbrownell.com" }
