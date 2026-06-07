@@ -88,6 +88,13 @@ class TestDefaultDynamicVariables:
         assert "configuration_file_name" in names
 
     # ----------------------------------------------------------------------
+    def test_contains_home_dir(self) -> None:
+        """Test that DEFAULT_DYNAMIC_VARIABLES contains home_dir."""
+
+        names = [var.name for var in DEFAULT_DYNAMIC_VARIABLES]
+        assert "home_dir" in names
+
+    # ----------------------------------------------------------------------
     def test_contains_platform_variables(self) -> None:
         """Test that DEFAULT_DYNAMIC_VARIABLES contains platform-specific variables."""
 
@@ -131,6 +138,16 @@ class TestDefaultDynamicVariables:
         assert isinstance(is_linux.value, bool)
         assert isinstance(is_macos.value, bool)
         assert isinstance(is_windows.value, bool)
+
+    # ----------------------------------------------------------------------
+    def test_home_dir_is_static_string(self) -> None:
+        """Test that home_dir is a static string value matching Path.home()."""
+
+        home_dir = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "home_dir")
+
+        assert isinstance(home_dir.value, str)
+        assert not callable(home_dir.value)
+        assert home_dir.value == str(Path.home())
 
     # ----------------------------------------------------------------------
     def test_exactly_one_platform_is_true(self) -> None:
@@ -1309,6 +1326,100 @@ class TestResolveEntries:
         assert entries[0].dynamic_variables["is_windows"] in (True, False)
 
     # ----------------------------------------------------------------------
+    def test_home_dir_included_in_dynamic_variables(self, tmp_path: Path) -> None:
+        """Test that home_dir is included in entry's dynamic_variables."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dynamic_variables is not None
+        assert "home_dir" in entries[0].dynamic_variables
+        assert entries[0].dynamic_variables["home_dir"] == str(Path.home())
+
+    # ----------------------------------------------------------------------
+    def test_home_dir_available_in_template(self, tmp_path: Path) -> None:
+        """Test that home_dir is available as a Jinja variable in templates."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        template_file = config_dir / "template.txt.jinja"
+        template_file.write_text("Home: {{ home_dir }}", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "output.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: template.txt.jinja
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].rendered_content == f"Home: {Path.home()}"
+
+    # ----------------------------------------------------------------------
+    def test_home_dir_available_in_dest_path(self, tmp_path: Path) -> None:
+        """Test that home_dir can be used in dest path."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: source.txt
+                    dest: "{{ home_dir }}/test_output/dest.txt"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dest == (Path.home() / "test_output" / "dest.txt").absolute()
+
+    # ----------------------------------------------------------------------
     def test_platform_variables_in_condition(self, tmp_path: Path) -> None:
         """Test that platform variables can be used in condition expressions."""
 
@@ -1442,6 +1553,7 @@ class TestResolveEntries:
         # All dynamic variables should be cleaned up
         assert "configuration_file_dir" not in env.globals
         assert "configuration_file_name" not in env.globals
+        assert "home_dir" not in env.globals
         assert "is_linux" not in env.globals
         assert "is_macos" not in env.globals
         assert "is_windows" not in env.globals
