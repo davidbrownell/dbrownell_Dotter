@@ -690,3 +690,93 @@ class TestReverseSync:
         # --force should not be recognized
         assert result.exit_code != 0
         assert "No such option" in result.output or "no such option" in result.output.lower()
+
+
+# ----------------------------------------------------------------------
+class TestInstallHelp:
+    # ----------------------------------------------------------------------
+    def test_help_includes_configuration_files_section(self) -> None:
+        """Test that Install help includes Configuration Files section."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "Configuration Files" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_variables_section(self) -> None:
+        """Test that Install help includes Variables section."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "Variables" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_configuration_file_dir_variable(self) -> None:
+        """Test that Install help documents configuration_file_dir variable."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "configuration_file_dir" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_configuration_file_name_variable(self) -> None:
+        """Test that Install help documents configuration_file_name variable."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "configuration_file_name" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_platform_variables(self) -> None:
+        """Test that Install help documents platform variables."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "is_linux" in result.output
+        assert "is_macos" in result.output
+        assert "is_windows" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_example_yaml(self) -> None:
+        """Test that Install help includes YAML example."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "Example.yaml" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_substitution_example(self) -> None:
+        """Test that Install help includes substitution example."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "substitutions:" in result.output
+        assert "pattern:" in result.output
+        assert "replacement:" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_includes_condition_example(self) -> None:
+        """Test that Install help includes condition example."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "condition:" in result.output
+
+    # ----------------------------------------------------------------------
+    def test_help_shows_platform_variable_values(self) -> None:
+        """Test that Install help shows static values for platform variables."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        # Platform variables with static values should show their value
+        # e.g., "is_linux: ... [value: True]" or "[value: False]"
+        assert "[value:" in result.output

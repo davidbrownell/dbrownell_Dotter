@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import shutil
+import sys
 import textwrap
 
 from enum import auto, Enum
@@ -69,6 +70,55 @@ class Entry:
 
 
 # ----------------------------------------------------------------------
+@define(frozen=True)
+class DefaultDynamicVariable:
+    """Default dynamic variables that are always available for use in the configuration."""
+
+    name: str
+    """Name of the variable."""
+
+    description: str
+    """Description of the variable."""
+
+    value: object | Callable[[Path], object]
+    """Value of the variable, or a callable that generates the value given the configuration file path."""
+
+
+# ----------------------------------------------------------------------
+# |
+# |  Public Types
+# |
+# ----------------------------------------------------------------------
+DEFAULT_DYNAMIC_VARIABLES: list[DefaultDynamicVariable] = [
+    DefaultDynamicVariable(
+        "configuration_file_dir",
+        "The directory containing the configuration file. Can be used for resolving relative paths in the configuration.",
+        lambda config_path: str(config_path.parent),
+    ),
+    DefaultDynamicVariable(
+        "configuration_file_name",
+        "The name of the configuration file. Can be used for resolving relative paths in the configuration.",
+        lambda config_path: config_path.name,
+    ),
+    DefaultDynamicVariable(
+        "is_linux",
+        "True if the current platform is Linux. Can be used for platform-specific conditions in the configuration.",
+        sys.platform.startswith("linux"),
+    ),
+    DefaultDynamicVariable(
+        "is_macos",
+        "True if the current platform is macOS. Can be used for platform-specific conditions in the configuration.",
+        sys.platform == "darwin",
+    ),
+    DefaultDynamicVariable(
+        "is_windows",
+        "True if the current platform is Windows. Can be used for platform-specific conditions in the configuration.",
+        sys.platform.startswith("win"),
+    ),
+]
+
+
+# ----------------------------------------------------------------------
 def ResolveEntries(  # noqa: C901, PLR0915
     env: Environment,
     config_filenames: list[Path],
@@ -95,7 +145,8 @@ def ResolveEntries(  # noqa: C901, PLR0915
     for config_filename in config_filenames:
         # Create the dynamic variables
         dynamic_variables: dict[str, object] = {
-            "configuration_file_dir": config_filename.parent,
+            var.name: var.value(config_filename) if callable(var.value) else var.value  # ty: ignore[call-top-callable]
+            for var in DEFAULT_DYNAMIC_VARIABLES
         }
 
         # Apply the dynamic variables to the Jinja environment

@@ -1,4 +1,6 @@
 # noqa: D100
+import textwrap
+
 from pathlib import Path  # noqa: TC003
 from typing import Annotated
 
@@ -30,7 +32,76 @@ app = typer.Typer(
 
 
 # ----------------------------------------------------------------------
-@app.command("Install", no_args_is_help=True)
+def _InstallHelp() -> str:
+    variables: list[str] = [
+        "- {}: {}{}".format(
+            var.name,
+            var.description,
+            r" \[value: {}]".format(var.value) if not callable(var.value) else "",
+        )
+        for var in Lib.DEFAULT_DYNAMIC_VARIABLES
+    ]
+
+    return textwrap.dedent(
+        """\
+        Installs dotfiles on the current machine.
+
+        Configuration Files
+        ===================
+          Configuration files are YAML (.yaml, .yml) or JSON5 (.json5, .json) files that specify how
+          dotfiles should be installed.
+
+          Example.yaml
+          ------------
+          variable_definitions:
+            my_variable: "This must be provided on the command line via `--var my_variable=value`."
+
+          entries:
+            # Copy a file from the source to the destination.
+            - source: "relative/path/to/source/file1.txt"
+              dest: "~/destination/file1.txt"
+
+            # Populate a template and write it to the destination.
+            - source: "relative/path/to/source/file2.txt.jinja"
+              dest: "~/destination/file2.txt"
+
+            # Update content in an existing file by applying regex substitutions.
+            - source: null
+              dest: "{{{{ tools_dir }}}}/somefile.txt"
+              substitutions:
+                - pattern: "pattern to match"
+                  replacement: "replacement string that may include {{{{ my_variable }}}}"
+
+            # Apply the Entry only if a certain condition is met at runtime.
+            - source: "relative/path/to/source/file3.txt"
+              dest: "~/destination/file3.txt"
+              condition: "my_variable == 'some value'"  # This is a python expression
+
+            # Use environment variables
+            - source: "relative/path/to/source/file4.txt"
+              dest: "~/destination/file4.txt"
+              condition: "${{HOME}} == '/home/myuser'"
+
+        Variables
+        =========
+          Variables are provided via the command line using `--var key=value`. They can then be used
+          in source paths, destination paths, and substitution replacements.
+
+          Additionally, the following dynamic variables are always available:
+
+            {variables}
+        """,
+    ).format(
+        variables="\n    ".join(variables),
+    )
+
+
+# ----------------------------------------------------------------------
+@app.command(
+    "Install",
+    help=_InstallHelp(),
+    no_args_is_help=True,
+)
 def Install(
     config_filenames: Annotated[
         list[Path],
