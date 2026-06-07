@@ -101,6 +101,11 @@ DEFAULT_DYNAMIC_VARIABLES: list[DefaultDynamicVariable] = [
         lambda config_path: config_path.name,
     ),
     DefaultDynamicVariable(
+        "home_dir",
+        "The current user's home directory. Can be used for resolving paths in the configuration.",
+        str(Path.home()),
+    ),
+    DefaultDynamicVariable(
         "is_linux",
         "True if the current platform is Linux. Can be used for platform-specific conditions in the configuration.",
         sys.platform.startswith("linux"),
