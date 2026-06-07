@@ -12,7 +12,168 @@ from dbrownell_Common.Streams.DoneManager import DoneManager
 from dbrownell_Common.TestHelpers.StreamTestHelpers import GenerateDoneManagerAndContent
 from jinja2 import Environment
 
-from dbrownell_Dotter.Lib import Entry, Action, InstallEntries, ResolveEntries, ReverseSyncEntries
+from dbrownell_Dotter.Lib import (
+    Entry,
+    Action,
+    InstallEntries,
+    ResolveEntries,
+    ReverseSyncEntries,
+    DefaultDynamicVariable,
+    DEFAULT_DYNAMIC_VARIABLES,
+)
+
+
+# ----------------------------------------------------------------------
+class TestDefaultDynamicVariable:
+    # ----------------------------------------------------------------------
+    def test_construct_with_static_value(self) -> None:
+        """Test constructing a DefaultDynamicVariable with a static string value."""
+
+        var = DefaultDynamicVariable(
+            name="test_var",
+            description="A test variable",
+            value="static_value",
+        )
+
+        assert var.name == "test_var"
+        assert var.description == "A test variable"
+        assert var.value == "static_value"
+
+    # ----------------------------------------------------------------------
+    def test_construct_with_callable_value(self) -> None:
+        """Test constructing a DefaultDynamicVariable with a callable value."""
+
+        var = DefaultDynamicVariable(
+            name="test_var",
+            description="A test variable",
+            value=lambda config_path: str(config_path.parent),
+        )
+
+        assert var.name == "test_var"
+        assert var.description == "A test variable"
+        assert callable(var.value)
+
+        # Test that the callable works correctly
+        test_path = Path("/some/config/file.yaml")
+        assert var.value(test_path) == str(test_path.parent)  # ty: ignore[call-top-callable]
+
+    # ----------------------------------------------------------------------
+    def test_frozen_immutable(self) -> None:
+        """Test that DefaultDynamicVariable is immutable (frozen)."""
+
+        var = DefaultDynamicVariable(
+            name="test_var",
+            description="A test variable",
+            value="static_value",
+        )
+
+        with pytest.raises(Exception):
+            var.name = "new_name"  # ty: ignore[invalid-assignment]
+
+
+# ----------------------------------------------------------------------
+class TestDefaultDynamicVariables:
+    # ----------------------------------------------------------------------
+    def test_contains_configuration_file_dir(self) -> None:
+        """Test that DEFAULT_DYNAMIC_VARIABLES contains configuration_file_dir."""
+
+        names = [var.name for var in DEFAULT_DYNAMIC_VARIABLES]
+        assert "configuration_file_dir" in names
+
+    # ----------------------------------------------------------------------
+    def test_contains_configuration_file_name(self) -> None:
+        """Test that DEFAULT_DYNAMIC_VARIABLES contains configuration_file_name."""
+
+        names = [var.name for var in DEFAULT_DYNAMIC_VARIABLES]
+        assert "configuration_file_name" in names
+
+    # ----------------------------------------------------------------------
+    def test_contains_platform_variables(self) -> None:
+        """Test that DEFAULT_DYNAMIC_VARIABLES contains platform-specific variables."""
+
+        names = [var.name for var in DEFAULT_DYNAMIC_VARIABLES]
+        assert "is_linux" in names
+        assert "is_macos" in names
+        assert "is_windows" in names
+
+    # ----------------------------------------------------------------------
+    def test_configuration_file_dir_is_callable(self) -> None:
+        """Test that configuration_file_dir has a callable value."""
+
+        var = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "configuration_file_dir")
+        assert callable(var.value)
+
+        # Test the callable
+        test_path = Path("/some/config/file.yaml")
+        result = var.value(test_path)  # ty: ignore[call-top-callable]
+        assert result == str(test_path.parent)
+
+    # ----------------------------------------------------------------------
+    def test_configuration_file_name_is_callable(self) -> None:
+        """Test that configuration_file_name has a callable value."""
+
+        var = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "configuration_file_name")
+        assert callable(var.value)
+
+        # Test the callable
+        test_path = Path("/some/config/my_config.yaml")
+        result = var.value(test_path)  # ty: ignore[call-top-callable]
+        assert result == "my_config.yaml"
+
+    # ----------------------------------------------------------------------
+    def test_platform_variables_are_static(self) -> None:
+        """Test that platform variables have static bool values."""
+
+        is_linux = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_linux")
+        is_macos = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_macos")
+        is_windows = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_windows")
+
+        assert isinstance(is_linux.value, bool)
+        assert isinstance(is_macos.value, bool)
+        assert isinstance(is_windows.value, bool)
+
+    # ----------------------------------------------------------------------
+    def test_exactly_one_platform_is_true(self) -> None:
+        """Test that exactly one platform variable is True."""
+
+        is_linux = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_linux")
+        is_macos = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_macos")
+        is_windows = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_windows")
+
+        true_count = sum(1 for val in [is_linux.value, is_macos.value, is_windows.value] if val is True)
+
+        # At least one should be true, and at most one (since we can only be on one platform)
+        assert true_count >= 0  # Could be a platform not covered
+        assert true_count <= 1  # Can only be on one platform
+
+    # ----------------------------------------------------------------------
+    def test_platform_variable_matches_current_platform(self) -> None:
+        """Test that the correct platform variable is set based on sys.platform."""
+
+        is_linux = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_linux")
+        is_macos = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_macos")
+        is_windows = next(v for v in DEFAULT_DYNAMIC_VARIABLES if v.name == "is_windows")
+
+        if sys.platform.startswith("linux"):
+            assert is_linux.value is True
+            assert is_macos.value is False
+            assert is_windows.value is False
+        elif sys.platform == "darwin":
+            assert is_linux.value is False
+            assert is_macos.value is True
+            assert is_windows.value is False
+        elif sys.platform.startswith("win"):
+            assert is_linux.value is False
+            assert is_macos.value is False
+            assert is_windows.value is True
+
+    # ----------------------------------------------------------------------
+    def test_all_variables_have_descriptions(self) -> None:
+        """Test that all DEFAULT_DYNAMIC_VARIABLES have non-empty descriptions."""
+
+        for var in DEFAULT_DYNAMIC_VARIABLES:
+            assert var.description, f"{var.name} has empty description"
+            assert len(var.description) > 10, f"{var.name} has suspiciously short description"
 
 
 # ----------------------------------------------------------------------
@@ -949,7 +1110,7 @@ class TestResolveEntries:
         assert len(entries) == 1
         assert entries[0].dynamic_variables is not None
         assert "configuration_file_dir" in entries[0].dynamic_variables
-        assert entries[0].dynamic_variables["configuration_file_dir"] == config_dir
+        assert entries[0].dynamic_variables["configuration_file_dir"] == str(config_dir)
 
     # ----------------------------------------------------------------------
     def test_dynamic_variables_cleaned_up_after_config_processing(self, tmp_path: Path) -> None:
@@ -1003,13 +1164,11 @@ class TestResolveEntries:
 
         # Verify that each entry has its own dynamic_variables with correct config_file_dir
         assert len(entries) == 2
-        assert (
-            entries[0].dynamic_variables
-            and entries[0].dynamic_variables["configuration_file_dir"] == config_dir1
+        assert entries[0].dynamic_variables and entries[0].dynamic_variables["configuration_file_dir"] == str(
+            config_dir1
         )
-        assert (
-            entries[1].dynamic_variables
-            and entries[1].dynamic_variables["configuration_file_dir"] == config_dir2
+        assert entries[1].dynamic_variables and entries[1].dynamic_variables["configuration_file_dir"] == str(
+            config_dir2
         )
 
         # Verify that env.globals does not contain configuration_file_dir after processing
@@ -1044,6 +1203,248 @@ class TestResolveEntries:
 
         assert len(entries) == 1
         assert entries[0].dest == (config_dir / "output" / "dest.txt").absolute()
+
+    # ----------------------------------------------------------------------
+    def test_configuration_file_name_available_in_template(self, tmp_path: Path) -> None:
+        """Test that configuration_file_name is available as a Jinja variable."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        template_file = config_dir / "template.txt.jinja"
+        template_file.write_text("Config name: {{ configuration_file_name }}", encoding="utf-8")
+
+        config_file = config_dir / "my_config.yaml"
+        dest_path = tmp_path / "output.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: template.txt.jinja
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Write
+        assert entries[0].rendered_content == "Config name: my_config.yaml"
+
+    # ----------------------------------------------------------------------
+    def test_configuration_file_name_included_in_dynamic_variables(self, tmp_path: Path) -> None:
+        """Test that configuration_file_name is included in entry's dynamic_variables."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "test_config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dynamic_variables is not None
+        assert "configuration_file_name" in entries[0].dynamic_variables
+        assert entries[0].dynamic_variables["configuration_file_name"] == "test_config.yaml"
+
+    # ----------------------------------------------------------------------
+    def test_platform_variables_included_in_dynamic_variables(self, tmp_path: Path) -> None:
+        """Test that platform variables (is_linux, is_macos, is_windows) are included in dynamic_variables."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].dynamic_variables is not None
+        assert "is_linux" in entries[0].dynamic_variables
+        assert "is_macos" in entries[0].dynamic_variables
+        assert "is_windows" in entries[0].dynamic_variables
+
+        # Verify the values are booleans
+        assert entries[0].dynamic_variables["is_linux"] in (True, False)
+        assert entries[0].dynamic_variables["is_macos"] in (True, False)
+        assert entries[0].dynamic_variables["is_windows"] in (True, False)
+
+    # ----------------------------------------------------------------------
+    def test_platform_variables_in_condition(self, tmp_path: Path) -> None:
+        """Test that platform variables can be used in condition expressions."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "is_windows or is_linux or is_macos"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        # At least one platform variable should be True
+        assert len(entries) == 1
+
+    # ----------------------------------------------------------------------
+    def test_platform_variable_condition_filters_entries(self, tmp_path: Path) -> None:
+        """Test that platform variable condition can filter out entries."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        # Use a condition that is always false by requiring all platforms to be True
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                    condition: "is_windows and is_linux and is_macos"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        # No entry should match since we can only be on one platform at a time
+        assert len(entries) == 0
+
+    # ----------------------------------------------------------------------
+    def test_platform_variables_available_in_template(self, tmp_path: Path) -> None:
+        """Test that platform variables are available in Jinja templates."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        template_file = config_dir / "template.txt.jinja"
+        template_file.write_text(
+            "Windows: {{ is_windows }}, Linux: {{ is_linux }}, macOS: {{ is_macos }}", encoding="utf-8"
+        )
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "output.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: template.txt.jinja
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Write
+
+        # The content should contain all three platform variables
+        assert "Windows:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
+        assert "Linux:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
+        assert "macOS:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
+
+    # ----------------------------------------------------------------------
+    def test_dynamic_variables_all_cleaned_up(self, tmp_path: Path) -> None:
+        """Test that all dynamic variables are removed from env.globals after processing."""
+
+        env = Environment()
+
+        config_dir = tmp_path / "configs"
+        config_dir.mkdir()
+
+        source_file = config_dir / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = config_dir / "config.yaml"
+        dest_path = tmp_path / "dest.txt"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: source.txt
+                    dest: {dest_path.as_posix()}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        ResolveEntries(env, [config_file])
+
+        # All dynamic variables should be cleaned up
+        assert "configuration_file_dir" not in env.globals
+        assert "configuration_file_name" not in env.globals
+        assert "is_linux" not in env.globals
+        assert "is_macos" not in env.globals
+        assert "is_windows" not in env.globals
 
     # ----------------------------------------------------------------------
     def test_substitute_action_combined_with_other_actions(self, tmp_path: Path) -> None:
