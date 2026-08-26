@@ -16,7 +16,11 @@ from dbrownell_Common.ContextlibEx import ExitStack
 from dbrownell_Common import TextwrapEx
 from jinja2 import Environment, meta
 
-from dbrownell_Dotter.Configuration import Configuration
+from dbrownell_Dotter.Configuration import (
+    Configuration,
+    SourceConfigurationEntry,
+    SubstituteConfigurationEntry,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -124,7 +128,7 @@ DEFAULT_DYNAMIC_VARIABLES: list[DefaultDynamicVariable] = [
 
 
 # ----------------------------------------------------------------------
-def ResolveEntries(  # noqa: C901, PLR0915
+def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
     env: Environment,
     config_filenames: list[Path],
     *,
@@ -208,7 +212,7 @@ def ResolveEntries(  # noqa: C901, PLR0915
                 else:
                     dest = Path(_Populate(env, entry.dest)).expanduser().absolute()
 
-                if entry.source is not None:
+                if isinstance(entry, SourceConfigurationEntry):
                     # We are looking at a Write, Link, or Copy
 
                     source = (config_filename.parent / entry.source).expanduser().absolute()
@@ -230,10 +234,8 @@ def ResolveEntries(  # noqa: C901, PLR0915
                             if (force_symbolic_links or source.drive == dest.drive)
                             else Action.Copy
                         )
-                else:
+                elif isinstance(entry, SubstituteConfigurationEntry):
                     # We are looking at a Substitute
-                    assert entry.substitutions, entry
-
                     action = Action.Substitute
                     resolved_substitutions: list[tuple[re.Pattern[str], str]] = []
 
@@ -251,6 +253,8 @@ def ResolveEntries(  # noqa: C901, PLR0915
                             )
 
                     substitutions = resolved_substitutions
+                else:
+                    assert False, entry  # noqa: B011, PT015  # pragma: no cover
 
                 if not has_errors:
                     assert action

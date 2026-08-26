@@ -66,8 +66,7 @@ def _InstallHelp() -> str:
               dest: "~/destination/file2.txt"
 
             # Update content in an existing file by applying regex substitutions.
-            - source: null
-              dest: "{{{{ tools_dir }}}}/somefile.txt"
+            - dest: "{{{{ tools_dir }}}}/somefile.txt"
               substitutions:
                 - pattern: "pattern to match"
                   replacement: "replacement string that may include {{{{ my_variable }}}}"

@@ -81,8 +81,7 @@ entries:
     dest: ~/.bashrc
 
   # Regex substitution on existing file
-  - source: null
-    dest: /etc/myapp/config.conf
+  - dest: /etc/myapp/config.conf
     substitutions:
       - pattern: "^EMAIL=.*$"
         replacement: "EMAIL={{ email }}"

@@ -23,27 +23,47 @@ class Substitution:
 
 
 # ----------------------------------------------------------------------
-@define(frozen=True)
+@define(frozen=True, kw_only=True)
 class ConfigurationEntry:
-    """Represents a single entry in the configuration file."""
-
-    source: Path | None
-    """Relative path to the source file/directory. None for substitute-only entries."""
-
-    dest: str
-    """Value may include environment variables or jinja2 template variables."""
-
-    substitutions: list[Substitution] | None = None
-    """List of regex substitutions to apply to an existing file."""
+    """Attributes common to all entries in the configuration file."""
 
     condition: str | None = None
     """Optional jinja2 expression that must evaluate to true for this entry to be applied at runtime."""
 
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class SourceConfigurationEntry(ConfigurationEntry):
+    """An entry that copies, links, or renders a source file/directory to a destination."""
+
+    source: Path
+    """Relative path to the source file/directory."""
+
+    dest: str
+    """Value may include environment variables or jinja2 template variables."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class SubstituteConfigurationEntry(ConfigurationEntry):
+    """An entry that applies regex substitutions to an existing destination file."""
+
+    dest: str
+    """Value may include environment variables or jinja2 template variables."""
+
+    substitutions: list[Substitution]
+    """List of regex substitutions to apply to an existing file."""
+
     # ----------------------------------------------------------------------
     def __attrs_post_init__(self) -> None:
-        assert (self.source is not None and self.substitutions is None) or (
-            self.source is None and self.substitutions
-        ), "Exactly one of 'source' or 'substitutions' must be specified."
+        if not self.substitutions:
+            msg = "'substitutions' must contain at least one item."
+            raise ValueError(msg)
+
+
+# ----------------------------------------------------------------------
+ConfigurationEntryTypes = SourceConfigurationEntry | SubstituteConfigurationEntry
+"""All concrete configuration entry types; cattrs uses this union to determine the type of each entry."""
 
 
 # ----------------------------------------------------------------------
@@ -54,7 +74,7 @@ class Configuration:
     variable_definitions: dict[str, str]
     """Dictionary of variable definitions that can be used in source content and dest paths"""
 
-    entries: list[ConfigurationEntry]
+    entries: list[ConfigurationEntryTypes]
     """List of configuration entries"""
 
     # ----------------------------------------------------------------------

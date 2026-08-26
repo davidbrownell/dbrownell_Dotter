@@ -4,14 +4,22 @@ from pathlib import Path
 
 import pytest
 
-from dbrownell_Dotter.Configuration import Configuration, ConfigurationEntry
+from cattrs.errors import ClassValidationError
+
+from dbrownell_Dotter.Configuration import (
+    Configuration,
+    ConfigurationEntryTypes,
+    SourceConfigurationEntry,
+    SubstituteConfigurationEntry,
+    Substitution,
+)
 
 
 # ----------------------------------------------------------------------
-class TestConfigurationEntry:
+class TestSourceConfigurationEntry:
     # ----------------------------------------------------------------------
     def test_Construct(self) -> None:
-        entry = ConfigurationEntry(Path("foo/bar.txt"), "/dest.txt")
+        entry = SourceConfigurationEntry(source=Path("foo/bar.txt"), dest="/dest.txt")
 
         assert entry.source == Path("foo/bar.txt")
         assert entry.dest == "/dest.txt"
@@ -19,9 +27,9 @@ class TestConfigurationEntry:
 
     # ----------------------------------------------------------------------
     def test_ConstructWithCondition(self) -> None:
-        entry = ConfigurationEntry(
-            Path("foo/bar.txt"),
-            "/dest.txt",
+        entry = SourceConfigurationEntry(
+            source=Path("foo/bar.txt"),
+            dest="/dest.txt",
             condition="{{ os_name == 'Windows' }}",
         )
 
@@ -31,13 +39,45 @@ class TestConfigurationEntry:
 
 
 # ----------------------------------------------------------------------
+class TestSubstituteConfigurationEntry:
+    # ----------------------------------------------------------------------
+    def test_Construct(self) -> None:
+        substitutions = [Substitution("old_value", "new_value")]
+
+        entry = SubstituteConfigurationEntry(dest="/dest.txt", substitutions=substitutions)
+
+        assert entry.dest == "/dest.txt"
+        assert entry.substitutions == substitutions
+        assert entry.condition is None
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithCondition(self) -> None:
+        substitutions = [Substitution("old_value", "new_value")]
+
+        entry = SubstituteConfigurationEntry(
+            dest="/dest.txt",
+            substitutions=substitutions,
+            condition="{{ os_name == 'Windows' }}",
+        )
+
+        assert entry.dest == "/dest.txt"
+        assert entry.substitutions == substitutions
+        assert entry.condition == "{{ os_name == 'Windows' }}"
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithoutSubstitutions(self) -> None:
+        with pytest.raises(ValueError, match="'substitutions' must contain at least one item."):
+            SubstituteConfigurationEntry(dest="/dest.txt", substitutions=[])
+
+
+# ----------------------------------------------------------------------
 class TestConfiguration:
     # ----------------------------------------------------------------------
     def test_Construct(self) -> None:
         variable_definitions = {"FOO_VARIABLE": "foo_value", "BAR_VARIABLE": "bar_value"}
-        entries = [
-            ConfigurationEntry(Path("one.txt"), "/one.txt"),
-            ConfigurationEntry(Path("two.txt"), "/two.txt"),
+        entries: list[ConfigurationEntryTypes] = [
+            SourceConfigurationEntry(source=Path("one.txt"), dest="/one.txt"),
+            SourceConfigurationEntry(source=Path("two.txt"), dest="/two.txt"),
         ]
 
         config = Configuration(variable_definitions, entries)
@@ -78,7 +118,10 @@ class TestConfiguration:
         assert config.variable_definitions == {"FOO_VARIABLE": "foo_value", "BAR_VARIABLE": "bar_value"}
 
         # We can't compare the entries directly, because the use of fs monkeypatches the Path class. Compare by string instead.
-        assert [(str(e.source), e.dest) for e in config.entries] == [
+        source_entries = [e for e in config.entries if isinstance(e, SourceConfigurationEntry)]
+
+        assert len(source_entries) == len(config.entries)
+        assert [(str(e.source), e.dest) for e in source_entries] == [
             (
                 "one.txt",
                 "/one.txt",
@@ -114,7 +157,10 @@ class TestConfiguration:
         assert config.variable_definitions == {"FOO_VARIABLE": "foo_value", "BAR_VARIABLE": "bar_value"}
 
         # We can't compare the entries directly, because the use of fs monkeypatches the Path class. Compare by string instead.
-        assert [(str(e.source), e.dest) for e in config.entries] == [
+        source_entries = [e for e in config.entries if isinstance(e, SourceConfigurationEntry)]
+
+        assert len(source_entries) == len(config.entries)
+        assert [(str(e.source), e.dest) for e in source_entries] == [
             (
                 "one.txt",
                 "/one.txt",
@@ -151,6 +197,71 @@ class TestConfiguration:
         assert config.entries[0].condition == "{{ os_name == 'Windows' }}"
         assert config.entries[1].condition == "{{ os_name == 'Linux' }}"
         assert config.entries[2].condition is None
+
+    # ----------------------------------------------------------------------
+    def test_FromFileEntryTypes(self, fs) -> None:
+        fs.create_file(
+            "config.yaml",
+            contents=textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: "one.txt"
+                    dest: "/one.txt"
+                  - dest: "/two.txt"
+                    substitutions:
+                      - pattern: "old_value"
+                        replacement: "new_value"
+                """,
+            ),
+        )
+
+        config = Configuration.FromFile(Path("config.yaml"))
+
+        assert len(config.entries) == 2
+
+        source_entry = config.entries[0]
+        assert isinstance(source_entry, SourceConfigurationEntry)
+        assert str(source_entry.source) == "one.txt"
+        assert source_entry.dest == "/one.txt"
+
+        substitute_entry = config.entries[1]
+        assert isinstance(substitute_entry, SubstituteConfigurationEntry)
+        assert substitute_entry.dest == "/two.txt"
+        assert substitute_entry.substitutions == [Substitution("old_value", "new_value")]
+
+    # ----------------------------------------------------------------------
+    def test_FromFileInvalidEntry(self, fs) -> None:
+        fs.create_file(
+            "config.yaml",
+            contents=textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - dest: "/one.txt"
+                """,
+            ),
+        )
+
+        with pytest.raises(ClassValidationError):
+            Configuration.FromFile(Path("config.yaml"))
+
+    # ----------------------------------------------------------------------
+    def test_FromFileWithoutSubstitutions(self, fs) -> None:
+        fs.create_file(
+            "config.yaml",
+            contents=textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - dest: "/one.txt"
+                    substitutions: []
+                """,
+            ),
+        )
+
+        with pytest.raises(ClassValidationError):
+            Configuration.FromFile(Path("config.yaml"))
 
     # ----------------------------------------------------------------------
     def test_FromFileDoesNotExist(self) -> None:
