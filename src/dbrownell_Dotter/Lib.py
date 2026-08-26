@@ -9,10 +9,10 @@ import sys
 import tempfile
 import textwrap
 
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from enum import auto, Enum
 from pathlib import Path
-from typing import cast, TYPE_CHECKING
+from typing import ClassVar, TYPE_CHECKING
 
 from attrs import define
 from dbrownell_Common.ContextlibEx import ExitStack
@@ -38,56 +38,355 @@ if TYPE_CHECKING:
 # |  Public Types
 # |
 # ----------------------------------------------------------------------
-class Action(Enum):
-    """Action to perform for an entry."""
-
-    Copy = auto()
-    """Copy the source to the destination."""
-
-    Link = auto()
-    """Symlink the source to the destination."""
-
-    Write = auto()
-    """Write the source content to the destination."""
-
-    Substitute = auto()
-    """Apply regex substitutions to an existing file."""
-
-    Execute = auto()
-    """Run commands via a temporary script."""
-
-
-# ----------------------------------------------------------------------
-@define(frozen=True)
-class Entry:
-    """Content to be copied from source to dest."""
-
-    action: Action
-    """Action to perform for this entry."""
-
-    source: Path | None
-    """Source path to a file or directory. None for Substitute and Execute actions."""
-
-    dest: Path | None
-    """Destination path. None for Execute actions."""
-
-    rendered_content: str | None = None
-    """Rendered template content when the source is a Jinja template."""
-
-    substitutions: list[tuple[re.Pattern[str], str]] | None = None
-    """List of (pattern, rendered_replacement) tuples for Substitute actions."""
-
-    commands: list[str] | None = None
-    """Rendered commands for Execute actions."""
-
-    name: str | None = None
-    """Rendered display name for Execute actions."""
+@define(frozen=True, kw_only=True)
+class Entry(ABC):
+    """Content to be installed on the local machine."""
 
     dynamic_variables: dict[str, object] | None = None
     """Dynamic variables used when rendering this entry's content. These variables will be added to the jinja environment's global variables."""
 
+    # ----------------------------------------------------------------------
+    @property
+    @abstractmethod
+    def display_name(self) -> str:
+        """Value that identifies this entry on the terminal."""
+
+    # ----------------------------------------------------------------------
+    @abstractmethod
+    def Install(self, dm: DoneManager, *, force: bool, dry_run: bool) -> str | None:
+        """Install the entry and return a description of what was done (or None when nothing was)."""
+
+    # ----------------------------------------------------------------------
+    @abstractmethod
+    def ReverseSync(self, dm: DoneManager, untemplater: _Untemplater, *, dry_run: bool) -> str | None:
+        """Sync changes from the destination back to the source and return a description of what was done (or None when nothing was)."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class CommandEntry(Entry):
+    """Commands run via a temporary script."""
+
+    name: str
+    """Rendered display name."""
+
+    commands: list[str]
+    """Rendered commands to run."""
+
+    # ----------------------------------------------------------------------
+    @property
+    def display_name(self) -> str:  # noqa: D102
+        return self.name
+
+    # ----------------------------------------------------------------------
+    def Install(self, dm: DoneManager, *, force: bool, dry_run: bool) -> str | None:  # noqa: ARG002, D102
+        dm.WriteVerbose("\n{}\n\n".format("\n".join(self.commands)))
+
+        if not dry_run:
+            with _TemporaryScript(self.commands) as script_filename:
+                result = SubprocessEx.Run(f'"{script_filename}"')
+
+                if result.returncode == 0:
+                    dm.WriteVerbose(result.output)
+                else:
+                    dm.WriteError(result.output)
+
+        return "Executed"
+
+    # ----------------------------------------------------------------------
+    def ReverseSync(  # noqa: D102
+        self,
+        dm: DoneManager,  # noqa: ARG002
+        untemplater: _Untemplater,  # noqa: ARG002
+        *,
+        dry_run: bool,  # noqa: ARG002
+    ) -> str | None:
+        return "Skipped Commands"
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class DestinationEntry(Entry):
+    """Content associated with a destination on the local filesystem."""
+
+    dest: Path
+    """Destination path."""
+
     make_executable: bool = False
     """Set the execute flag on the destination; only valid when the destination is a file."""
+
+    _action_desc: ClassVar[str]
+    """Description displayed once the content has been applied to the destination."""
+
+    # ----------------------------------------------------------------------
+    @property
+    def display_name(self) -> str:  # noqa: D102
+        return str(self.dest)
+
+    # ----------------------------------------------------------------------
+    def Install(self, dm: DoneManager, *, force: bool, dry_run: bool) -> str | None:  # noqa: D102
+        should_apply, skip_desc = self._PrepareDestination(dm, force=force, dry_run=dry_run)
+
+        if not should_apply:
+            return skip_desc
+
+        if not dry_run:
+            self.dest.parent.mkdir(parents=True, exist_ok=True)
+            self._Apply()
+
+            if self.make_executable:
+                if self.dest.is_file():
+                    self.dest.chmod(
+                        self.dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+                    )
+                else:
+                    dm.WriteError("'make_executable' is only valid when the destination is a file.")
+
+        return self._action_desc
+
+    # ----------------------------------------------------------------------
+    def ReverseSync(self, dm: DoneManager, untemplater: _Untemplater, *, dry_run: bool) -> str | None:  # noqa: D102
+        if not self.dest.exists():
+            dm.WriteError("The destination does not exist.")
+            return None
+
+        return self._ReverseSyncDestination(dm, untemplater, dry_run=dry_run)
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _PrepareDestination(
+        self,
+        dm: DoneManager,
+        *,
+        force: bool,
+        dry_run: bool,
+    ) -> tuple[bool, str | None]:
+        """Return (apply the content, description to display when the content is not applied)."""
+
+        if self.dest.exists() or self.dest.is_symlink():
+            if not force:
+                return False, "Already exists"
+
+            with dm.Nested("Removing{}...".format(" (dry_run)" if dry_run else "")):
+                if not dry_run:
+                    if self.dest.is_file() or self.dest.is_symlink():
+                        self.dest.unlink()
+                    elif self.dest.is_dir():
+                        shutil.rmtree(self.dest)
+                    else:
+                        assert False, self.dest  # noqa: B011, PT015  # pragma: no cover
+
+        return True, None
+
+    # ----------------------------------------------------------------------
+    @abstractmethod
+    def _Apply(self) -> None:
+        """Apply the content to the destination."""
+
+    # ----------------------------------------------------------------------
+    @abstractmethod
+    def _ReverseSyncDestination(
+        self,
+        dm: DoneManager,
+        untemplater: _Untemplater,
+        *,
+        dry_run: bool,
+    ) -> str | None:
+        """Sync changes from the existing destination back to the source."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class SubstituteEntry(DestinationEntry):
+    """Regex substitutions applied to an existing destination file."""
+
+    substitutions: list[tuple[re.Pattern[str], str]]
+    """List of (pattern, rendered_replacement) tuples."""
+
+    _action_desc: ClassVar[str] = "Substituted"
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _PrepareDestination(
+        self,
+        dm: DoneManager,
+        *,
+        force: bool,  # noqa: ARG002
+        dry_run: bool,  # noqa: ARG002
+    ) -> tuple[bool, str | None]:
+        # Unlike other entries, an existing destination is modified rather than replaced.
+        if not self.dest.exists():
+            dm.WriteError("Destination does not exist.")
+            return False, None
+
+        if not self.dest.is_file():
+            dm.WriteError("Destination is not a file.")
+            return False, None
+
+        return True, None
+
+    # ----------------------------------------------------------------------
+    def _Apply(self) -> None:
+        content = self.dest.read_text(encoding="utf-8")
+
+        for pattern, replacement in self.substitutions:
+            content = pattern.sub(replacement, content)
+
+        self.dest.write_text(content, encoding="utf-8")
+
+    # ----------------------------------------------------------------------
+    def _ReverseSyncDestination(
+        self,
+        dm: DoneManager,  # noqa: ARG002
+        untemplater: _Untemplater,  # noqa: ARG002
+        *,
+        dry_run: bool,  # noqa: ARG002
+    ) -> str | None:
+        return "Skipped Substitution"
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class SourceEntry(DestinationEntry):
+    """Content produced from a source on the local filesystem."""
+
+    source: Path
+    """Source path to a file or directory."""
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _ReverseSyncDestination(
+        self,
+        dm: DoneManager,
+        untemplater: _Untemplater,
+        *,
+        dry_run: bool,
+    ) -> str | None:
+        action_info = self._CreateReverseSyncAction(untemplater)
+
+        if action_info is None:
+            return "No changes detected"
+
+        action, action_desc = action_info
+
+        if action is not None and not dry_run:
+            with dm.Nested("Removing source content..."):
+                if self.source.is_file():
+                    self.source.unlink()
+                elif self.source.is_dir():
+                    shutil.rmtree(self.source)
+                else:
+                    assert False, self.source  # noqa: B011, PT015  # pragma: no cover
+
+            action()
+
+        return action_desc
+
+    # ----------------------------------------------------------------------
+    @abstractmethod
+    def _CreateReverseSyncAction(
+        self,
+        untemplater: _Untemplater,
+    ) -> tuple[Callable[[], object] | None, str | None] | None:
+        """Return (action that updates the source, description) or None when the source is already up to date."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class CopyEntry(SourceEntry):
+    """Source copied to the destination."""
+
+    _action_desc: ClassVar[str] = "Copied"
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _Apply(self) -> None:
+        if self.source.is_file():
+            shutil.copy2(self.source, self.dest)
+        else:
+            shutil.copytree(self.source, self.dest)
+
+    # ----------------------------------------------------------------------
+    def _CreateReverseSyncAction(
+        self,
+        untemplater: _Untemplater,  # noqa: ARG002
+    ) -> tuple[Callable[[], object] | None, str | None] | None:
+        if self.dest.is_file():
+            if not self.source.is_file() or _CalcFileHash(self.dest) != _CalcFileHash(self.source):
+                return lambda: shutil.copy2(self.dest, self.source), "Copied file"
+        elif not self.source.is_dir() or not _DirectoriesMatch(self.dest, self.source):
+            return lambda: shutil.copytree(self.dest, self.source), "Copied directory"
+
+        return None
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class LinkEntry(SourceEntry):
+    """Symlink at the destination that points to the source."""
+
+    _action_desc: ClassVar[str] = "Linked"
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _Apply(self) -> None:
+        self.dest.symlink_to(self.source, target_is_directory=self.source.is_dir())
+
+    # ----------------------------------------------------------------------
+    def _CreateReverseSyncAction(
+        self,
+        untemplater: _Untemplater,  # noqa: ARG002
+    ) -> tuple[Callable[[], object] | None, str | None] | None:
+        # The destination is the source, so there is nothing to sync.
+        return None, "Skipped Symlink"
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
+class WriteEntry(SourceEntry):
+    """Rendered template content written to the destination."""
+
+    rendered_content: str
+    """Rendered template content."""
+
+    _action_desc: ClassVar[str] = "Wrote"
+
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    def _Apply(self) -> None:
+        self.dest.write_text(self.rendered_content, encoding="utf-8")
+
+    # ----------------------------------------------------------------------
+    def _ReverseSyncDestination(
+        self,
+        dm: DoneManager,
+        untemplater: _Untemplater,
+        *,
+        dry_run: bool,
+    ) -> str | None:
+        if not self.dest.is_file():
+            dm.WriteError("Destination is not a file.")
+            return None
+
+        return super()._ReverseSyncDestination(dm, untemplater, dry_run=dry_run)
+
+    # ----------------------------------------------------------------------
+    def _CreateReverseSyncAction(
+        self,
+        untemplater: _Untemplater,
+    ) -> tuple[Callable[[], object] | None, str | None] | None:
+        if _CalcFileHash(self.dest) == _CalcStringHash(self.rendered_content):
+            return None
+
+        content = untemplater(self.dynamic_variables or {}, self.dest)
+
+        return lambda: self.source.write_text(content, encoding="utf-8"), "Wrote template"
 
 
 # ----------------------------------------------------------------------
@@ -239,12 +538,9 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
 
                     if len(rendered_values) == len(values_to_render):
                         results.append(
-                            Entry(
-                                Action.Execute,
-                                None,
-                                None,
-                                commands=rendered_values[1:],
+                            CommandEntry(
                                 name=rendered_values[0],
+                                commands=rendered_values[1:],
                                 dynamic_variables=dynamic_variables,
                             ),
                         )
@@ -265,11 +561,8 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
 
                 has_errors = False
 
-                action: Action | None = None
-                source: Path | None = None
                 dest: Path | None = None
-                rendered_content: str | None = None
-                substitutions: list[tuple[re.Pattern[str], str]] | None = None
+                new_entry: DestinationEntry | None = None
 
                 # Process the dest
                 if this_missing_vars := meta.find_undeclared_variables(env.parse(entry.dest)):
@@ -279,31 +572,36 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
                     dest = Path(_Populate(env, entry.dest)).expanduser().absolute()
 
                 if isinstance(entry, SourceConfigurationEntry):
-                    # We are looking at a Write, Link, or Copy
-
                     source = (config_filename.parent / entry.source).expanduser().absolute()
 
                     # Process the source if it is a template
                     if source.suffix in [".jinja", ".jinja2", ".j2"]:
-                        action = Action.Write
-
                         content = source.read_text(encoding="utf-8")
 
                         if this_missing_vars := meta.find_undeclared_variables(env.parse(content)):
                             ProcessMissingVars(config, source, this_missing_vars)
                             has_errors = True
-                        else:
-                            rendered_content = _Populate(env, content)
-                    elif dest:
-                        action = (
-                            Action.Link
-                            if (force_symbolic_links or source.drive == dest.drive)
-                            else Action.Copy
+                        elif dest is not None:
+                            new_entry = WriteEntry(
+                                source=source,
+                                dest=dest,
+                                rendered_content=_Populate(env, content),
+                                dynamic_variables=dynamic_variables,
+                                make_executable=entry.make_executable,
+                            )
+                    elif dest is not None:
+                        entry_type = (
+                            LinkEntry if (force_symbolic_links or source.drive == dest.drive) else CopyEntry
+                        )
+
+                        new_entry = entry_type(
+                            source=source,
+                            dest=dest,
+                            dynamic_variables=dynamic_variables,
+                            make_executable=entry.make_executable,
                         )
                 elif isinstance(entry, SubstituteConfigurationEntry):
-                    # We are looking at a Substitute
-                    action = Action.Substitute
-                    resolved_substitutions: list[tuple[re.Pattern[str], str]] = []
+                    substitutions: list[tuple[re.Pattern[str], str]] = []
 
                     for sub in entry.substitutions:
                         # Process the replacement string for Jinja/env vars
@@ -311,31 +609,26 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
                             ProcessMissingVars(config, config_filename, this_missing_vars)
                             has_errors = True
                         else:
-                            resolved_substitutions.append(
+                            substitutions.append(
                                 (
                                     re.compile(sub.pattern, re.MULTILINE),
                                     _Populate(env, sub.replacement),
                                 ),
                             )
 
-                    substitutions = resolved_substitutions
+                    if not has_errors and dest is not None:
+                        new_entry = SubstituteEntry(
+                            dest=dest,
+                            substitutions=substitutions,
+                            dynamic_variables=dynamic_variables,
+                            make_executable=entry.make_executable,
+                        )
                 else:
                     assert False, entry  # noqa: B011, PT015  # pragma: no cover
 
                 if not has_errors:
-                    assert action
-                    assert dest
-                    results.append(
-                        Entry(
-                            action,
-                            source,
-                            dest,
-                            rendered_content,
-                            substitutions,
-                            dynamic_variables=dynamic_variables,
-                            make_executable=entry.make_executable,
-                        )
-                    )
+                    assert new_entry is not None
+                    results.append(new_entry)
 
     if all_missing_vars:
         sections: list[str] = [
@@ -388,7 +681,7 @@ def DisplayPostInstallInstructions(dm: DoneManager, post_install_instructions: l
 
 
 # ----------------------------------------------------------------------
-def InstallEntries(  # noqa: C901, PLR0912, PLR0915
+def InstallEntries(
     dm: DoneManager,
     entries: list[Entry],
     *,
@@ -397,128 +690,16 @@ def InstallEntries(  # noqa: C901, PLR0912, PLR0915
 ) -> None:
     """Process the action associated with each entry."""
 
-    action_template = "{} (dry_run)" if dry_run else "{}"
-
-    for entry_index, entry in enumerate(entries):
-        action_desc: str | None = None
-
-        with dm.Nested(
-            "'{}' ({} of {})...".format(
-                entry.name if entry.action == Action.Execute else entry.dest,
-                entry_index + 1,
-                len(entries),
-            ),
-            lambda: (
-                None if action_desc is None else action_template.format(action_desc)  # noqa: B023
-            ),
-        ) as entry_dm:
-            if entry.action == Action.Execute:
-                assert entry.commands is not None, entry
-
-                action_desc = "Executed"
-
-                entry_dm.WriteVerbose("\n{}\n\n".format("\n".join(entry.commands)))
-
-                if not dry_run:
-                    with _TemporaryScript(entry.commands) as script_filename:
-                        result = SubprocessEx.Run(f'"{script_filename}"')
-
-                        if result.returncode == 0:
-                            entry_dm.WriteVerbose(result.output)
-                        else:
-                            entry_dm.WriteError(result.output)
-
-                continue
-
-            assert entry.dest is not None, entry
-
-            # Substitute action requires the dest to exist (we're modifying an existing file)
-            if entry.action == Action.Substitute:
-                if not entry.dest.exists():
-                    entry_dm.WriteError("Destination does not exist.")
-                    continue
-            elif entry.dest.exists() or entry.dest.is_symlink():
-                if force:
-                    with entry_dm.Nested("Removing{}...".format(" (dry_run)" if dry_run else "")):
-                        if not dry_run:
-                            if entry.dest.is_file() or entry.dest.is_symlink():
-                                entry.dest.unlink()
-                            elif entry.dest.is_dir():
-                                shutil.rmtree(entry.dest)
-                            else:
-                                assert False, entry.dest  # noqa: B011, PT015  # pragma: no cover
-                else:
-                    action_desc = "Already exists"
-                    continue
-
-            if entry.action == Action.Copy:
-                assert entry.source is not None, entry
-
-                if entry.source.is_file():
-                    action = lambda: shutil.copy2(entry.source, entry.dest)  # noqa: B023, E731  # ty: ignore[no-matching-overload]
-                else:
-                    action = lambda: shutil.copytree(entry.source, entry.dest)  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
-
-                action_desc = "Copied"
-
-            elif entry.action == Action.Link:
-                assert entry.source is not None, entry
-
-                action = lambda: entry.dest.symlink_to(  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
-                    entry.source,  # noqa: B023  # ty: ignore[invalid-argument-type]
-                    target_is_directory=entry.source.is_dir(),  # noqa: B023  # ty: ignore[unresolved-attribute]
-                )
-                action_desc = "Linked"
-
-            elif entry.action == Action.Write:
-                assert entry.rendered_content is not None, entry
-
-                action = lambda: entry.dest.write_text(entry.rendered_content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type, unresolved-attribute]
-                action_desc = "Wrote"
-
-            elif entry.action == Action.Substitute:
-                assert entry.substitutions is not None, entry
-
-                if not entry.dest.is_file():
-                    entry_dm.WriteError("Destination is not a file.")
-                    continue
-
-                # ----------------------------------------------------------------------
-                def ApplySubstitutions(entry: Entry) -> None:
-                    assert entry.substitutions is not None
-                    assert entry.dest is not None
-
-                    content = entry.dest.read_text(encoding="utf-8")
-
-                    for pattern, replacement in entry.substitutions:
-                        content = pattern.sub(replacement, content)
-
-                    entry.dest.write_text(content, encoding="utf-8")
-
-                # ----------------------------------------------------------------------
-
-                action = lambda entry=entry: ApplySubstitutions(entry)  # noqa: E731
-                action_desc = "Substituted"
-
-            else:
-                assert False, entry.action  # noqa: B011, PT015  # pragma: no cover
-
-            if not dry_run:
-                entry.dest.parent.mkdir(parents=True, exist_ok=True)
-                action()
-
-                if entry.make_executable:
-                    if not entry.dest.is_file():
-                        entry_dm.WriteError("'make_executable' is only valid when the destination is a file.")
-                        continue
-
-                    entry.dest.chmod(
-                        entry.dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
-                    )
+    _ProcessEntries(
+        dm,
+        entries,
+        lambda entry_dm, entry: entry.Install(entry_dm, force=force, dry_run=dry_run),
+        dry_run=dry_run,
+    )
 
 
 # ----------------------------------------------------------------------
-def ReverseSyncEntries(  # noqa: C901, PLR0915
+def ReverseSyncEntries(
     dm: DoneManager,
     entries: list[Entry],
     template_vars: dict[str, object],
@@ -527,94 +708,56 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
 ) -> None:
     """Sync changes from the destination back to the source for each entry."""
 
-    untemplater: _Untemplater | None = None
+    untemplater = _Untemplater(template_vars)
 
+    _ProcessEntries(
+        dm,
+        entries,
+        lambda entry_dm, entry: entry.ReverseSync(entry_dm, untemplater, dry_run=dry_run),
+        dry_run=dry_run,
+    )
+
+
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+def _ProcessEntries(
+    dm: DoneManager,
+    entries: list[Entry],
+    process_func: Callable[[DoneManager, Entry], str | None],
+    *,
+    dry_run: bool,
+) -> None:
     action_template = "{} (dry_run)" if dry_run else "{}"
 
     for entry_index, entry in enumerate(entries):
-        action_desc: str | None = None
-
-        with dm.Nested(
-            "'{}' ({} of {})...".format(
-                entry.name if entry.action == Action.Execute else entry.dest,
-                entry_index + 1,
-                len(entries),
-            ),
-            lambda: None if action_desc is None else action_template.format(action_desc),  # noqa: B023
-        ) as entry_dm:
-            if entry.action == Action.Execute:
-                action_desc = "Skipped Commands"
-                continue
-
-            assert entry.dest is not None, entry
-
-            if not entry.dest.exists():
-                entry_dm.WriteError("The destination does not exist.")
-                continue
-
-            if entry.action == Action.Link:
-                action_desc = "Skipped Symlink"
-                continue
-
-            if entry.action == Action.Substitute:
-                action_desc = "Skipped Substitution"
-                continue
-
-            action: Callable[[], None] | None = None
-
-            if entry.action == Action.Copy:
-                assert entry.source is not None, entry
-
-                if entry.dest.is_file():
-                    if not entry.source.is_file() or _CalcFileHash(entry.dest) != _CalcFileHash(entry.source):
-                        action = lambda: shutil.copy2(entry.dest, entry.source)  # noqa: B023, E731  # ty: ignore[no-matching-overload]
-                        action_desc = "Copied file"
-                else:  # noqa: PLR5501
-                    if not entry.source.is_dir() or not _DirectoriesMatch(entry.dest, entry.source):
-                        action = lambda: shutil.copytree(entry.dest, entry.source)  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
-                        action_desc = "Copied directory"
-
-            elif entry.action == Action.Write:
-                assert entry.source is not None, entry
-
-                if not entry.dest.is_file():
-                    entry_dm.WriteError("Destination is not a file.")
-                    continue
-
-                assert entry.rendered_content is not None, entry
-
-                if _CalcFileHash(entry.dest) != _CalcStringHash(entry.rendered_content):
-                    if untemplater is None:
-                        untemplater = _Untemplater(template_vars)
-
-                    content = untemplater(entry.dynamic_variables or {}, entry.dest)
-
-                    action = lambda: cast(None, entry.source.write_text(content, encoding="utf-8"))  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
-                    action_desc = "Wrote template"
-
-            else:
-                assert False, entry.action  # noqa: B011, PT015  # pragma: no cover
-
-            if action is None:
-                action_desc = "No changes detected"
-            elif not dry_run:
-                assert action_desc is not None
-                assert entry.source is not None, entry
-
-                with entry_dm.Nested("Removing source content..."):
-                    if entry.source.is_file():
-                        entry.source.unlink()
-                    elif entry.source.is_dir():
-                        assert entry.source.is_dir(), entry.source
-                        shutil.rmtree(entry.source)
-                    else:
-                        assert False, entry.source  # noqa: B011, PT015  # pragma: no cover
-
-                action()
+        _ProcessEntry(
+            dm,
+            entry,
+            "'{}' ({} of {})...".format(entry.display_name, entry_index + 1, len(entries)),
+            action_template,
+            process_func,
+        )
 
 
 # ----------------------------------------------------------------------
-# ----------------------------------------------------------------------
+def _ProcessEntry(
+    dm: DoneManager,
+    entry: Entry,
+    heading: str,
+    action_template: str,
+    process_func: Callable[[DoneManager, Entry], str | None],
+) -> None:
+    # Invoked outside of the enclosing loop so that the closure below does not capture a loop variable.
+    action_desc: str | None = None
+
+    with dm.Nested(
+        heading,
+        lambda: None if action_desc is None else action_template.format(action_desc),
+    ) as entry_dm:
+        action_desc = process_func(entry_dm, entry)
+
+
 # ----------------------------------------------------------------------
 @contextmanager
 def _TemporaryScript(commands: list[str]) -> Iterator[Path]:

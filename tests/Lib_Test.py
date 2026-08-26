@@ -17,8 +17,14 @@ from dbrownell_Common import TextwrapEx
 from jinja2 import Environment
 
 from dbrownell_Dotter.Lib import (
+    CommandEntry,
+    CopyEntry,
+    DestinationEntry,
     Entry,
-    Action,
+    LinkEntry,
+    SourceEntry,
+    SubstituteEntry,
+    WriteEntry,
     DisplayPostInstallInstructions,
     InstallEntries,
     ResolveEntries,
@@ -257,7 +263,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Link
+        assert isinstance(entries[0], LinkEntry)
         assert entries[0].source == source_file.absolute()
         assert entries[0].dest == dest_path.absolute()
 
@@ -293,7 +299,11 @@ class TestResolveEntries:
 
         entries = ResolveEntries(env, [config_file]).entries
 
-        assert [entry.make_executable for entry in entries] == [True, False, True]
+        assert [cast(DestinationEntry, entry).make_executable for entry in entries] == [
+            True,
+            False,
+            True,
+        ]
 
     # ----------------------------------------------------------------------
     @pytest.mark.skipif(
@@ -320,7 +330,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Copy
+        assert isinstance(entries[0], CopyEntry)
         assert entries[0].source == Path("C:/source.txt").absolute()
         assert entries[0].dest == Path("D:/dest.txt").absolute()
 
@@ -349,7 +359,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file], force_symbolic_links=True).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Link
+        assert isinstance(entries[0], LinkEntry)
         assert entries[0].source == Path("C:/source.txt").absolute()
         assert entries[0].dest == Path("D:/dest.txt").absolute()
 
@@ -379,7 +389,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file], force_symbolic_links=True).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Link
+        assert isinstance(entries[0], LinkEntry)
         assert entries[0].source == source_file.absolute()
         assert entries[0].dest == dest_path.absolute()
 
@@ -410,7 +420,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Hello World!"
         assert entries[0].dest == dest_path.absolute()
@@ -442,7 +452,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Value: 42"
 
@@ -473,7 +483,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Item: test"
 
@@ -503,6 +513,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], DestinationEntry)
         assert entries[0].dest == (tmp_path / "output_folder" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
@@ -531,6 +542,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], DestinationEntry)
         assert entries[0].dest == (tmp_path / "env_folder" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
@@ -560,6 +572,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Env: environment_value"
 
@@ -718,8 +731,10 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config1, config2]).entries
 
         assert len(entries) == 2
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source1.absolute()
         assert entries[0].dest == dest1.absolute()
+        assert isinstance(entries[1], SourceEntry)
         assert entries[1].source == source2.absolute()
         assert entries[1].dest == dest2.absolute()
 
@@ -755,8 +770,8 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
-        assert entries[0].action == Action.Link
-        assert entries[1].action == Action.Link
+        assert isinstance(entries[0], LinkEntry)
+        assert isinstance(entries[1], LinkEntry)
 
     # ----------------------------------------------------------------------
     def test_combined_jinja_and_env_vars(self, tmp_path: Path, monkeypatch) -> None:
@@ -789,6 +804,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].source == template_file.absolute()
         assert entries[0].rendered_content == "Jinja: jinja_part, Env: env_part"
 
@@ -821,6 +837,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source_file.absolute()
 
     # ----------------------------------------------------------------------
@@ -926,10 +943,8 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Substitute
-        assert entries[0].source is None
+        assert isinstance(entries[0], SubstituteEntry)
         assert entries[0].dest == dest_path.absolute()
-        assert entries[0].substitutions is not None
         assert len(entries[0].substitutions) == 1
         assert entries[0].substitutions[0][0].pattern == "old_value"
         assert entries[0].substitutions[0][1] == "new_value"
@@ -963,8 +978,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Substitute
-        assert entries[0].substitutions is not None
+        assert isinstance(entries[0], SubstituteEntry)
         assert len(entries[0].substitutions) == 3
         assert entries[0].substitutions[0][0].pattern == "pattern1"
         assert entries[0].substitutions[0][1] == "replacement1"
@@ -999,8 +1013,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Substitute
-        assert entries[0].substitutions is not None
+        assert isinstance(entries[0], SubstituteEntry)
         assert len(entries[0].substitutions) == 1
         assert entries[0].substitutions[0][1] == "EMAIL=user@example.com"
 
@@ -1030,8 +1043,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Substitute
-        assert entries[0].substitutions is not None
+        assert isinstance(entries[0], SubstituteEntry)
         assert len(entries[0].substitutions) == 1
         assert entries[0].substitutions[0][1] == "HOME=/home/testuser"
 
@@ -1095,6 +1107,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], DestinationEntry)
         assert entries[0].dest == (tmp_path / "configs" / "target.txt").absolute()
 
     # ----------------------------------------------------------------------
@@ -1126,7 +1139,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].rendered_content == f"Config dir: {config_dir}"
 
     # ----------------------------------------------------------------------
@@ -1252,6 +1265,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], DestinationEntry)
         assert entries[0].dest == (config_dir / "output" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
@@ -1283,7 +1297,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].rendered_content == "Config name: my_config.yaml"
 
     # ----------------------------------------------------------------------
@@ -1420,6 +1434,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], WriteEntry)
         assert entries[0].rendered_content == f"Home: {Path.home()}"
 
     # ----------------------------------------------------------------------
@@ -1450,6 +1465,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], DestinationEntry)
         assert entries[0].dest == (Path.home() / "test_output" / "dest.txt").absolute()
 
     # ----------------------------------------------------------------------
@@ -1548,12 +1564,12 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Write
+        assert isinstance(entries[0], WriteEntry)
 
         # The content should contain all three platform variables
-        assert "Windows:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
-        assert "Linux:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
-        assert "macOS:" in entries[0].rendered_content  # ty: ignore[unsupported-operator]
+        assert "Windows:" in entries[0].rendered_content
+        assert "Linux:" in entries[0].rendered_content
+        assert "macOS:" in entries[0].rendered_content
 
     # ----------------------------------------------------------------------
     def test_dynamic_variables_all_cleaned_up(self, tmp_path: Path) -> None:
@@ -1622,10 +1638,9 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
-        assert entries[0].action == Action.Link
+        assert isinstance(entries[0], LinkEntry)
         assert entries[0].source == source_file.absolute()
-        assert entries[1].action == Action.Substitute
-        assert entries[1].source is None
+        assert isinstance(entries[1], SubstituteEntry)
 
     # ----------------------------------------------------------------------
     def test_condition_true_includes_entry(self, tmp_path: Path) -> None:
@@ -1655,6 +1670,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source_file.absolute()
 
     # ----------------------------------------------------------------------
@@ -1754,7 +1770,9 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source1.absolute()
+        assert isinstance(entries[1], SourceEntry)
         assert entries[1].source == source3.absolute()
 
     # ----------------------------------------------------------------------
@@ -1874,7 +1892,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Substitute
+        assert isinstance(entries[0], SubstituteEntry)
 
     # ----------------------------------------------------------------------
     def test_condition_template_style(self, tmp_path: Path) -> None:
@@ -1904,6 +1922,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source_file.absolute()
 
     # ----------------------------------------------------------------------
@@ -1934,6 +1953,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
+        assert isinstance(entries[0], SourceEntry)
         assert entries[0].source == source_file.absolute()
 
     # ----------------------------------------------------------------------
@@ -2057,9 +2077,7 @@ class TestResolveEntries:
         entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
-        assert entries[0].action == Action.Execute
-        assert entries[0].source is None
-        assert entries[0].dest is None
+        assert isinstance(entries[0], CommandEntry)
         assert entries[0].name == "Configuring git for john"
         assert entries[0].commands == [
             "git config --global user.name john",
@@ -2096,10 +2114,12 @@ class TestResolveEntries:
 
         entries = ResolveEntries(env, [config_file]).entries
 
-        assert [(entry.action, entry.name) for entry in entries] == [
-            (Action.Execute, "Before"),
-            (Action.Link, None),
-            (Action.Execute, "After"),
+        assert [
+            (type(entry), entry.name if isinstance(entry, CommandEntry) else None) for entry in entries
+        ] == [
+            (CommandEntry, "Before"),
+            (LinkEntry, None),
+            (CommandEntry, "After"),
         ]
 
     # ----------------------------------------------------------------------
@@ -2129,7 +2149,7 @@ class TestResolveEntries:
 
         entries = ResolveEntries(env, [config_file]).entries
 
-        assert [entry.name for entry in entries] == ["Included"]
+        assert [cast(CommandEntry, entry).name for entry in entries] == ["Included"]
 
     # ----------------------------------------------------------------------
     def test_missing_variable_in_commands_raises_error(self, tmp_path: Path) -> None:
@@ -2407,7 +2427,9 @@ class TestInstallEntries:
 
         source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
-        entries = [Entry(Action.Write, source_path, dest_path, "Hello, World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="Hello, World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2432,7 +2454,9 @@ class TestInstallEntries:
 
         source_path = tmp_path / "script.sh.jinja"
         dest_path = tmp_path / "script.sh"
-        entries = [Entry(Action.Write, source_path, dest_path, "#!/bin/sh", make_executable=True)]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="#!/bin/sh", make_executable=True)
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2459,7 +2483,7 @@ class TestInstallEntries:
         (source_dir / "file1.txt").write_text("file1 content", encoding="utf-8")
 
         dest_path = tmp_path / "dest_dir"
-        entries = [Entry(Action.Copy, source_dir, dest_path, make_executable=True)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_path, make_executable=True)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2484,7 +2508,9 @@ class TestInstallEntries:
 
         source_path = tmp_path / "script.sh.jinja"
         dest_path = tmp_path / "script.sh"
-        entries = [Entry(Action.Write, source_path, dest_path, "#!/bin/sh", make_executable=True)]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="#!/bin/sh", make_executable=True)
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2510,7 +2536,7 @@ class TestInstallEntries:
         source_file.write_text("source content", encoding="utf-8")
 
         dest_path = tmp_path / "dest.txt"
-        entries = [Entry(Action.Copy, source_file, dest_path)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2540,7 +2566,7 @@ class TestInstallEntries:
         (source_dir / "subdir" / "file2.txt").write_text("file2 content", encoding="utf-8")
 
         dest_path = tmp_path / "dest_dir"
-        entries = [Entry(Action.Copy, source_dir, dest_path)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2569,7 +2595,7 @@ class TestInstallEntries:
         source_file.write_text("source content", encoding="utf-8")
 
         dest_path = tmp_path / "link.txt"
-        entries = [Entry(Action.Link, source_file, dest_path)]
+        entries: list[Entry] = [LinkEntry(source=source_file, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2597,7 +2623,9 @@ class TestInstallEntries:
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="new content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2623,7 +2651,9 @@ class TestInstallEntries:
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="new content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2654,7 +2684,7 @@ class TestInstallEntries:
         dest_path.mkdir()
         (dest_path / "old_file.txt").write_text("old content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_file, dest_path)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2682,7 +2712,9 @@ class TestInstallEntries:
 
         source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "output.txt"
-        entries = [Entry(Action.Write, source_path, dest_path, "Hello, World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="Hello, World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2708,7 +2740,9 @@ class TestInstallEntries:
         dest_path = tmp_path / "output.txt"
         dest_path.write_text("existing content", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="new content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2739,9 +2773,9 @@ class TestInstallEntries:
         dest1 = tmp_path / "dest1.txt"
         dest2 = tmp_path / "dest2.txt"
 
-        entries = [
-            Entry(Action.Write, template_file, dest1, "written content"),
-            Entry(Action.Copy, source_file, dest2),
+        entries: list[Entry] = [
+            WriteEntry(source=template_file, dest=dest1, rendered_content="written content"),
+            CopyEntry(source=source_file, dest=dest2),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
@@ -2768,7 +2802,9 @@ class TestInstallEntries:
 
         source_path = tmp_path / "template.txt.jinja"
         dest_path = tmp_path / "nested" / "path" / "output.txt"
-        entries = [Entry(Action.Write, source_path, dest_path, "nested content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="nested content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2815,7 +2851,7 @@ class TestInstallEntries:
         (source_dir / "file.txt").write_text("file content", encoding="utf-8")
 
         dest_path = tmp_path / "link_dir"
-        entries = [Entry(Action.Link, source_dir, dest_path)]
+        entries: list[Entry] = [LinkEntry(source=source_dir, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2843,7 +2879,7 @@ class TestInstallEntries:
         dest_path.write_text("Hello old_value World", encoding="utf-8")
 
         substitutions = [(re.compile("old_value", re.MULTILINE), "new_value")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2873,7 +2909,7 @@ class TestInstallEntries:
             (re.compile("bar", re.MULTILINE), "BAR"),
             (re.compile("baz", re.MULTILINE), "BAZ"),
         ]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2911,7 +2947,7 @@ class TestInstallEntries:
             (re.compile(r"^export EMAIL=.*$", re.MULTILINE), "export EMAIL=new@example.com"),
             (re.compile(r"^#.*$", re.MULTILINE), "# Updated comment"),
         ]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2946,7 +2982,7 @@ class TestInstallEntries:
         )
 
         substitutions = [(re.compile("value1", re.MULTILINE), "REPLACED")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2969,7 +3005,7 @@ class TestInstallEntries:
         dest_path.write_text("original content", encoding="utf-8")
 
         substitutions = [(re.compile("original", re.MULTILINE), "modified")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -2994,7 +3030,7 @@ class TestInstallEntries:
         dest_path = tmp_path / "nonexistent.txt"
 
         substitutions = [(re.compile("old", re.MULTILINE), "new")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3021,7 +3057,7 @@ class TestInstallEntries:
         dest_dir.mkdir()
 
         substitutions = [(re.compile("old", re.MULTILINE), "new")]
-        entries = [Entry(Action.Substitute, None, dest_dir, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_dir, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3048,7 +3084,7 @@ class TestInstallEntries:
         dest_path.write_text("Hello World", encoding="utf-8")
 
         substitutions = [(re.compile("nonexistent", re.MULTILINE), "replacement")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3078,7 +3114,7 @@ class TestInstallEntries:
         )
 
         substitutions = [(re.compile(r"^#.*\n", re.MULTILINE), "")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3098,7 +3134,9 @@ class TestInstallEntries:
         nonexistent_target = tmp_path / "nonexistent_target.txt"
         dest_path.symlink_to(nonexistent_target)
 
-        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="new content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3128,7 +3166,9 @@ class TestInstallEntries:
         nonexistent_target = tmp_path / "nonexistent_target.txt"
         dest_path.symlink_to(nonexistent_target)
 
-        entries = [Entry(Action.Write, source_path, dest_path, "new content")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_path, dest=dest_path, rendered_content="new content")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3159,7 +3199,7 @@ class TestInstallEntries:
         dest_path.write_text("name=john, name=jane", encoding="utf-8")
 
         substitutions = [(re.compile(r"name=(\w+)", re.MULTILINE), r"user=\1")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3173,13 +3213,9 @@ class TestInstallEntries:
         """Test that Execute action runs each command."""
 
         output_file = tmp_path / "output.txt"
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
-                commands=["git --version", f'git --version>"{output_file}"'],
-                name="Configuring git",
+        entries: list[Entry] = [
+            CommandEntry(
+                name="Configuring git", commands=["git --version", f'git --version>"{output_file}"']
             ),
         ]
 
@@ -3208,14 +3244,8 @@ class TestInstallEntries:
 
         command = f'type "{output_file}"' if os.name == "nt" else f'cat "{output_file}"'
 
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
-                commands=[command],
-                name="Displaying content",
-            ),
+        entries: list[Entry] = [
+            CommandEntry(name="Displaying content", commands=[command]),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent(verbose=True))
@@ -3243,16 +3273,13 @@ class TestInstallEntries:
         """Test that a failing command produces an error and prevents the commands that follow it from running."""
 
         output_file = tmp_path / "output.txt"
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
+        entries: list[Entry] = [
+            CommandEntry(
+                name="Configuring git",
                 commands=[
                     "this_command_does_not_exist_1234",
                     f'git --version>"{output_file}"',
                 ],
-                name="Configuring git",
             ),
         ]
 
@@ -3272,14 +3299,8 @@ class TestInstallEntries:
         """Test that Execute action does not run the commands during a dry run."""
 
         output_file = tmp_path / "output.txt"
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
-                commands=[f'git --version>"{output_file}"'],
-                name="Configuring git",
-            ),
+        entries: list[Entry] = [
+            CommandEntry(name="Configuring git", commands=[f'git --version>"{output_file}"']),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
@@ -3312,16 +3333,13 @@ class TestInstallEntries:
             encoding="utf-8",
         )
 
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
+        entries: list[Entry] = [
+            CommandEntry(
+                name="Running commands",
                 commands=[
                     f'"{batch_file}"',
                     f'git --version>"{executable_output}"',
                 ],
-                name="Running commands",
             ),
         ]
 
@@ -3355,17 +3373,14 @@ class TestInstallEntries:
         failing_batch_file = tmp_path / "failing.cmd"
         failing_batch_file.write_text("@echo off\necho failing\nexit /b 1\n", encoding="utf-8")
 
-        entries = [
-            Entry(
-                Action.Execute,
-                None,
-                None,
+        entries: list[Entry] = [
+            CommandEntry(
+                name="Running commands",
                 commands=[
                     f'"{successful_batch_file}"',
                     f'"{failing_batch_file}"',
                     f'git --version>"{output_file}"',
                 ],
-                name="Running commands",
             ),
         ]
 
@@ -3418,7 +3433,7 @@ class TestReverseSyncEntries:
         source_file.write_text("source content", encoding="utf-8")
 
         dest_path = tmp_path / "nonexistent.txt"
-        entries = [Entry(Action.Copy, source_file, dest_path)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3447,7 +3462,7 @@ class TestReverseSyncEntries:
         dest_path = tmp_path / "link.txt"
         dest_path.symlink_to(source_file)
 
-        entries = [Entry(Action.Link, source_file, dest_path)]
+        entries: list[Entry] = [LinkEntry(source=source_file, dest=dest_path)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3470,8 +3485,8 @@ class TestReverseSyncEntries:
     def test_skip_execute_action(self) -> None:
         """Test that Execute action entries are skipped."""
 
-        entries = [
-            Entry(Action.Execute, None, None, commands=["git --version"], name="Configuring git"),
+        entries: list[Entry] = [
+            CommandEntry(name="Configuring git", commands=["git --version"]),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
@@ -3497,7 +3512,7 @@ class TestReverseSyncEntries:
         dest_path.write_text("some content", encoding="utf-8")
 
         substitutions = [(re.compile("some", re.MULTILINE), "other")]
-        entries = [Entry(Action.Substitute, None, dest_path, substitutions=substitutions)]
+        entries: list[Entry] = [SubstituteEntry(dest=dest_path, substitutions=substitutions)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3526,7 +3541,7 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "dest.txt"
         dest_file.write_text("same content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_file, dest_file)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_file)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3555,7 +3570,7 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "dest.txt"
         dest_file.write_text("modified content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_file, dest_file)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_file)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3587,7 +3602,7 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "dest.txt"
         dest_file.write_text("dest content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_dir, dest_file)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_file)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3620,7 +3635,7 @@ class TestReverseSyncEntries:
         dest_dir.mkdir()
         (dest_dir / "file.txt").write_text("content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_dir, dest_dir)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_dir)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3649,7 +3664,7 @@ class TestReverseSyncEntries:
         dest_dir.mkdir()
         (dest_dir / "file.txt").write_text("modified content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_dir, dest_dir)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_dir)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3683,7 +3698,7 @@ class TestReverseSyncEntries:
         (dest_dir / "file1.txt").write_text("content1", encoding="utf-8")
         (dest_dir / "file2.txt").write_text("content2", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_dir, dest_dir)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_dir)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3716,7 +3731,7 @@ class TestReverseSyncEntries:
         dest_dir.mkdir()
         (dest_dir / "file.txt").write_text("dest content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_file, dest_dir)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_dir)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3748,7 +3763,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Hello World!", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Hello World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Hello World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3777,7 +3794,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Hello Modified!", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Hello World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Hello World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3808,7 +3827,9 @@ class TestReverseSyncEntries:
         dest_dir = tmp_path / "output_dir"
         dest_dir.mkdir()
 
-        entries = [Entry(Action.Write, source_template, dest_dir, "Hello World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_dir, rendered_content="Hello World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3837,7 +3858,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Name: john_doe", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Name: original_user")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Name: original_user")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3870,7 +3893,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Env: test_value", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Env: different")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Env: different")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3901,7 +3926,7 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "dest.txt"
         dest_file.write_text("modified content", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_file, dest_file)]
+        entries: list[Entry] = [CopyEntry(source=source_file, dest=dest_file)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3930,7 +3955,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Hello Modified!", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Hello World!")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Hello World!")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -3968,10 +3995,10 @@ class TestReverseSyncEntries:
         dest3 = tmp_path / "dest3.txt"
         dest3.symlink_to(source3)
 
-        entries = [
-            Entry(Action.Copy, source1, dest1),
-            Entry(Action.Copy, source2, dest2),
-            Entry(Action.Link, source3, dest3),
+        entries: list[Entry] = [
+            CopyEntry(source=source1, dest=dest1),
+            CopyEntry(source=source2, dest=dest2),
+            LinkEntry(source=source3, dest=dest3),
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
@@ -4013,7 +4040,7 @@ class TestReverseSyncEntries:
         (dest_dir / "subdir").mkdir()
         (dest_dir / "subdir" / "file2.txt").write_text("modified2", encoding="utf-8")
 
-        entries = [Entry(Action.Copy, source_dir, dest_dir)]
+        entries: list[Entry] = [CopyEntry(source=source_dir, dest=dest_dir)]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -4045,7 +4072,9 @@ class TestReverseSyncEntries:
         dest_file = tmp_path / "output.txt"
         dest_file.write_text("Path: /home/user/documents", encoding="utf-8")
 
-        entries = [Entry(Action.Write, source_template, dest_file, "Path: /original")]
+        entries: list[Entry] = [
+            WriteEntry(source=source_template, dest=dest_file, rendered_content="Path: /original")
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -4081,9 +4110,12 @@ class TestReverseSyncEntries:
 
         # Create entry with dynamic_variables populated
         dynamic_vars: dict[str, object] = {"my_dynamic_var": dynamic_value}
-        entries = [
-            Entry(
-                Action.Write, source_template, dest_file, "Config: /original", dynamic_variables=dynamic_vars
+        entries: list[Entry] = [
+            WriteEntry(
+                source=source_template,
+                dest=dest_file,
+                rendered_content="Config: /original",
+                dynamic_variables=dynamic_vars,
             )
         ]
 
@@ -4120,12 +4152,11 @@ class TestReverseSyncEntries:
 
         # Create entry with dynamic_variables populated
         dynamic_vars: dict[str, object] = {"my_config_path": dynamic_value}
-        entries = [
-            Entry(
-                Action.Write,
-                source_template,
-                dest_file,
-                "User: original, Config: /original",
+        entries: list[Entry] = [
+            WriteEntry(
+                source=source_template,
+                dest=dest_file,
+                rendered_content="User: original, Config: /original",
                 dynamic_variables=dynamic_vars,
             )
         ]
@@ -4163,7 +4194,14 @@ class TestReverseSyncEntries:
         dest_file.write_text("Hello john_doe!", encoding="utf-8")
 
         # Entry without dynamic_variables (None)
-        entries = [Entry(Action.Write, source_template, dest_file, "Hello World!", dynamic_variables=None)]
+        entries: list[Entry] = [
+            WriteEntry(
+                source=source_template,
+                dest=dest_file,
+                rendered_content="Hello World!",
+                dynamic_variables=None,
+            )
+        ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())
         dm = cast(DoneManager, next(dm_and_content))
@@ -4203,8 +4241,13 @@ class TestReverseSyncEntries:
             "long_path": long_value,
             "short_path": short_value,  # This value appears as a substring in the longer path
         }
-        entries = [
-            Entry(Action.Write, source_template, dest_file, "Path: /original", dynamic_variables=dynamic_vars)
+        entries: list[Entry] = [
+            WriteEntry(
+                source=source_template,
+                dest=dest_file,
+                rendered_content="Path: /original",
+                dynamic_variables=dynamic_vars,
+            )
         ]
 
         dm_and_content = iter(GenerateDoneManagerAndContent())

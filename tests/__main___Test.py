@@ -8,7 +8,7 @@ from jinja2 import Environment
 from typer.testing import CliRunner
 
 from dbrownell_Dotter.__main__ import app
-from dbrownell_Dotter.Lib import Entry, Action, ResolvedContent
+from dbrownell_Dotter.Lib import Entry, ResolvedContent, WriteEntry
 
 
 # ----------------------------------------------------------------------
@@ -290,8 +290,8 @@ class TestInstall:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
-        mock_entries = [
-            Entry(Action.Write, tmp_path / "source.txt", tmp_path / "dest.txt"),
+        mock_entries: list[Entry] = [
+            WriteEntry(source=tmp_path / "source.txt", dest=tmp_path / "dest.txt", rendered_content=""),
         ]
 
         with (
@@ -664,8 +664,8 @@ class TestReverseSync:
         config_file = tmp_path / "config.yaml"
         config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
 
-        mock_entries = [
-            Entry(Action.Write, tmp_path / "source.txt", tmp_path / "dest.txt"),
+        mock_entries: list[Entry] = [
+            WriteEntry(source=tmp_path / "source.txt", dest=tmp_path / "dest.txt", rendered_content=""),
         ]
 
         with (
