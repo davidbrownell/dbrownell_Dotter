@@ -7,6 +7,7 @@ import pytest
 from cattrs.errors import ClassValidationError
 
 from dbrownell_Dotter.Configuration import (
+    CommandConfigurationEntry,
     Configuration,
     ConfigurationEntryTypes,
     PostInstallConfigurationEntry,
@@ -98,6 +99,42 @@ class TestSubstituteConfigurationEntry:
     def test_ConstructWithoutSubstitutions(self) -> None:
         with pytest.raises(ValueError, match="'substitutions' must contain at least one item."):
             SubstituteConfigurationEntry(dest="/dest.txt", substitutions=[])
+
+
+# ----------------------------------------------------------------------
+class TestCommandConfigurationEntry:
+    # ----------------------------------------------------------------------
+    def test_Construct(self) -> None:
+        entry = CommandConfigurationEntry(
+            name="Configuring git",
+            commands=["git config --global user.name john"],
+        )
+
+        assert entry.name == "Configuring git"
+        assert entry.commands == ["git config --global user.name john"]
+        assert entry.condition is None
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithCondition(self) -> None:
+        entry = CommandConfigurationEntry(
+            name="Configuring git",
+            commands=["git config --global core.autocrlf input"],
+            condition="{{ os_name == 'Windows' }}",
+        )
+
+        assert entry.commands == ["git config --global core.autocrlf input"]
+        assert entry.condition == "{{ os_name == 'Windows' }}"
+
+    # ----------------------------------------------------------------------
+    @pytest.mark.parametrize("name", ["", "   \n  "])
+    def test_ConstructWithoutName(self, name) -> None:
+        with pytest.raises(ValueError, match="'name' must not be empty."):
+            CommandConfigurationEntry(name=name, commands=["git --version"])
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithoutCommands(self) -> None:
+        with pytest.raises(ValueError, match="'commands' must contain at least one item."):
+            CommandConfigurationEntry(name="Configuring git", commands=[])
 
 
 # ----------------------------------------------------------------------
@@ -268,6 +305,10 @@ class TestConfiguration:
                     substitutions:
                       - pattern: "old_value"
                         replacement: "new_value"
+                  - name: "Configuring git"
+                    commands:
+                      - git config --global user.name john
+                      - git config --global user.email john@example.com
                   - post_install_instructions: "Do this thing."
                 """,
             ),
@@ -275,7 +316,7 @@ class TestConfiguration:
 
         config = Configuration.FromFile(Path("config.yaml"))
 
-        assert len(config.entries) == 3
+        assert len(config.entries) == 4
 
         source_entry = config.entries[0]
         assert isinstance(source_entry, SourceConfigurationEntry)
@@ -287,7 +328,15 @@ class TestConfiguration:
         assert substitute_entry.dest == "/two.txt"
         assert substitute_entry.substitutions == [Substitution("old_value", "new_value")]
 
-        post_install_entry = config.entries[2]
+        command_entry = config.entries[2]
+        assert isinstance(command_entry, CommandConfigurationEntry)
+        assert command_entry.name == "Configuring git"
+        assert command_entry.commands == [
+            "git config --global user.name john",
+            "git config --global user.email john@example.com",
+        ]
+
+        post_install_entry = config.entries[3]
         assert isinstance(post_install_entry, PostInstallConfigurationEntry)
         assert post_install_entry.post_install_instructions == "Do this thing."
 

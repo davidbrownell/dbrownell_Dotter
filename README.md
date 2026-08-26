@@ -31,6 +31,7 @@
 - **Jinja2 templating** for dynamic configuration files
 - **Variable substitution** from command-line arguments or environment variables
 - **Regex-based substitutions** for modifying existing files in-place
+- **Command execution** for install steps that cannot be expressed as file content
 - **Reverse synchronization** to push manual changes back to source files
 - **Post-install instructions** displayed once the install process completes without errors
 
@@ -92,10 +93,22 @@ entries:
     dest: ~/bin/my_script.sh
     make_executable: true
 
+  # Commands run when the entry is encountered, so entries that follow may rely on the changes
+  # that they make
+  - name: Configuring git
+    commands:
+      - git config --global user.name "{{ username }}"
+      - git config --global user.email "{{ email }}"
+      - git config --global core.autocrlf input
+
   # Instructions displayed once the install process completes without errors
   - post_install_instructions: |
       Run `chsh -s $(which zsh)` to make zsh the default shell for {{ username }}.
 ```
+
+The commands associated with an entry are written to a single temporary script that runs when the
+entry is encountered, so state established by one command is visible to those that follow it. The
+entry fails as soon as one of its commands fails.
 
 #### Examples
 
