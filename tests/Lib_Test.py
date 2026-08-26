@@ -2031,6 +2031,142 @@ class TestResolveEntries:
         assert len(entries) == 1
 
     # ----------------------------------------------------------------------
+    def test_commands(self, tmp_path: Path, monkeypatch) -> None:
+        """Test that commands and their name are rendered."""
+
+        env = Environment()
+        env.globals["username"] = "john"  # ty: ignore[invalid-assignment]
+
+        monkeypatch.setenv("COMMAND_TEST_VAR", "john@example.com")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - name: "Configuring git for {{ username }}"
+                    commands:
+                      - git config --global user.name {{ username }}
+                      - git config --global user.email ${COMMAND_TEST_VAR}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file]).entries
+
+        assert len(entries) == 1
+        assert entries[0].action == Action.Execute
+        assert entries[0].source is None
+        assert entries[0].dest is None
+        assert entries[0].name == "Configuring git for john"
+        assert entries[0].commands == [
+            "git config --global user.name john",
+            "git config --global user.email john@example.com",
+        ]
+
+    # ----------------------------------------------------------------------
+    def test_commands_order_is_preserved(self, tmp_path: Path) -> None:
+        """Test that command entries remain in position relative to the other entries."""
+
+        env = Environment()
+
+        source_file = tmp_path / "source.txt"
+        source_file.write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - name: "Before"
+                    commands:
+                      - git --version
+                  - source: source.txt
+                    dest: {(tmp_path / "dest.txt").as_posix()}
+                  - name: "After"
+                    commands:
+                      - git --version
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file]).entries
+
+        assert [(entry.action, entry.name) for entry in entries] == [
+            (Action.Execute, "Before"),
+            (Action.Link, None),
+            (Action.Execute, "After"),
+        ]
+
+    # ----------------------------------------------------------------------
+    def test_commands_with_condition(self, tmp_path: Path) -> None:
+        """Test that command entries are skipped when the condition is false."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - name: "Included"
+                    condition: "is_windows or is_linux or is_macos"
+                    commands:
+                      - git --version
+                  - name: "Excluded"
+                    condition: "false"
+                    commands:
+                      - git --version
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file]).entries
+
+        assert [entry.name for entry in entries] == ["Included"]
+
+    # ----------------------------------------------------------------------
+    def test_missing_variable_in_commands_raises_error(self, tmp_path: Path) -> None:
+        """Test that missing Jinja variables in a command entry's name and commands raise ValueError."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions:
+                  email: "The email address to associate with git commits."
+                entries:
+                  - name: "Configuring git for {{ username }}"
+                    commands:
+                      - git config --global user.email {{ email }}
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            ResolveEntries(env, [config_file])
+
+        assert str(exc_info.value) == textwrap.dedent(
+            f"""\
+            The following variables are used in the configuration but are not defined:
+
+                '{config_file}':
+                    - email : The email address to associate with git commits.
+                    - username
+
+            """,
+        )
+
+    # ----------------------------------------------------------------------
     def test_post_install_instructions(self, tmp_path: Path, monkeypatch) -> None:
         """Test that post_install_instructions are rendered and returned."""
 
@@ -3032,6 +3168,226 @@ class TestInstallEntries:
 
         assert dest_path.read_text(encoding="utf-8") == "user=john, user=jane"
 
+    # ----------------------------------------------------------------------
+    def test_execute_action(self, tmp_path: Path) -> None:
+        """Test that Execute action runs each command."""
+
+        output_file = tmp_path / "output.txt"
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=["git --version", f'git --version>"{output_file}"'],
+                name="Configuring git",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert output_file.read_text(encoding="utf-8").startswith("git version")
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+              'Configuring git' (1 of 1)...DONE! (0, <scrubbed duration>, Executed)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_execute_action_verbose(self, tmp_path: Path) -> None:
+        """Test that the commands and their output are written when verbose."""
+
+        output_file = tmp_path / "output.txt"
+        output_file.write_text("file content", encoding="utf-8")
+
+        command = f'type "{output_file}"' if os.name == "nt" else f'cat "{output_file}"'
+
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=[command],
+                name="Displaying content",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent(verbose=True))
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              'Displaying content' (1 of 1)...
+
+                VERBOSE: {command}
+
+                VERBOSE: file content
+              DONE! (0, <scrubbed duration>, Executed)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_execute_action_error_stops_remaining_commands(self, tmp_path: Path) -> None:
+        """Test that a failing command produces an error and prevents the commands that follow it from running."""
+
+        output_file = tmp_path / "output.txt"
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=[
+                    "this_command_does_not_exist_1234",
+                    f'git --version>"{output_file}"',
+                ],
+                name="Configuring git",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent(expected_result=-1))
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert not output_file.exists()
+        assert "ERROR: " in content
+        assert "DONE! (-1, <scrubbed duration>, Executed)" in content
+
+    # ----------------------------------------------------------------------
+    def test_execute_action_dry_run(self, tmp_path: Path) -> None:
+        """Test that Execute action does not run the commands during a dry run."""
+
+        output_file = tmp_path / "output.txt"
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=[f'git --version>"{output_file}"'],
+                name="Configuring git",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries, dry_run=True)
+
+        content = cast(str, next(dm_and_content))
+
+        assert not output_file.exists()
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+              'Configuring git' (1 of 1)...DONE! (0, <scrubbed duration>, Executed (dry_run))
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    @pytest.mark.skipif(os.name != "nt", reason="Batch files are Windows-specific.")
+    def test_execute_action_batch_file(self, tmp_path: Path) -> None:
+        """Test that commands that follow a batch file command are executed."""
+
+        batch_output = tmp_path / "batch_output.txt"
+        executable_output = tmp_path / "executable_output.txt"
+
+        batch_file = tmp_path / "inner.cmd"
+        batch_file.write_text(
+            f'@echo off\necho batch content>"{batch_output}"\n',
+            encoding="utf-8",
+        )
+
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=[
+                    f'"{batch_file}"',
+                    f'git --version>"{executable_output}"',
+                ],
+                name="Running commands",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert batch_output.read_text(encoding="utf-8") == "batch content\n"
+        assert executable_output.read_text(encoding="utf-8").startswith("git version")
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+              'Running commands' (1 of 1)...DONE! (0, <scrubbed duration>, Executed)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    @pytest.mark.skipif(os.name != "nt", reason="Batch files are Windows-specific.")
+    def test_execute_action_batch_file_error_stops_remaining_commands(self, tmp_path: Path) -> None:
+        """Test that the return code of a failing batch file command prevents the commands that follow it from running."""
+
+        output_file = tmp_path / "output.txt"
+
+        successful_batch_file = tmp_path / "successful.cmd"
+        successful_batch_file.write_text("@echo off\necho successful\n", encoding="utf-8")
+
+        failing_batch_file = tmp_path / "failing.cmd"
+        failing_batch_file.write_text("@echo off\necho failing\nexit /b 1\n", encoding="utf-8")
+
+        entries = [
+            Entry(
+                Action.Execute,
+                None,
+                None,
+                commands=[
+                    f'"{successful_batch_file}"',
+                    f'"{failing_batch_file}"',
+                    f'git --version>"{output_file}"',
+                ],
+                name="Running commands",
+            ),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent(expected_result=-1))
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert not output_file.exists()
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+              'Running commands' (1 of 1)...
+                ERROR: successful
+                       failing
+              DONE! (-1, <scrubbed duration>, Executed)
+            DONE! (-1, <scrubbed duration>)
+            """,
+        )
+
 
 # ----------------------------------------------------------------------
 class TestReverseSyncEntries:
@@ -3109,6 +3465,29 @@ class TestReverseSyncEntries:
         )
         # Source should remain unchanged
         assert source_file.read_text(encoding="utf-8") == "source content"
+
+    # ----------------------------------------------------------------------
+    def test_skip_execute_action(self) -> None:
+        """Test that Execute action entries are skipped."""
+
+        entries = [
+            Entry(Action.Execute, None, None, commands=["git --version"], name="Configuring git"),
+        ]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        ReverseSyncEntries(dm, entries, {})
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+              'Configuring git' (1 of 1)...DONE! (0, <scrubbed duration>, Skipped Commands)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
 
     # ----------------------------------------------------------------------
     def test_skip_substitute_action(self, tmp_path: Path) -> None:

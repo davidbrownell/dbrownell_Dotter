@@ -69,6 +69,28 @@ class SubstituteConfigurationEntry(ConfigurationEntry):
 
 # ----------------------------------------------------------------------
 @define(frozen=True, kw_only=True)
+class CommandConfigurationEntry(ConfigurationEntry):
+    """An entry that runs one or more commands on the command line."""
+
+    name: str
+    """Name displayed while the commands are running. Value may include environment variables or jinja2 template variables."""
+
+    commands: list[str]
+    """Commands to run. Values may include environment variables or jinja2 template variables."""
+
+    # ----------------------------------------------------------------------
+    def __attrs_post_init__(self) -> None:
+        if not self.name.strip():
+            msg = "'name' must not be empty."
+            raise ValueError(msg)
+
+        if not self.commands:
+            msg = "'commands' must contain at least one item."
+            raise ValueError(msg)
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True, kw_only=True)
 class PostInstallConfigurationEntry(ConfigurationEntry):
     """An entry that displays instructions once the install process completes without errors."""
 
@@ -84,7 +106,10 @@ class PostInstallConfigurationEntry(ConfigurationEntry):
 
 # ----------------------------------------------------------------------
 ConfigurationEntryTypes = (
-    SourceConfigurationEntry | SubstituteConfigurationEntry | PostInstallConfigurationEntry
+    SourceConfigurationEntry
+    | SubstituteConfigurationEntry
+    | CommandConfigurationEntry
+    | PostInstallConfigurationEntry
 )
 """All concrete configuration entry types; cattrs uses this union to determine the type of each entry."""
 

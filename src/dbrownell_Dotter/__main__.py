@@ -86,6 +86,15 @@ def _InstallHelp() -> str:
               dest: "~/destination/script.sh"
               make_executable: true
 
+            # Run commands on the command line when the entry is encountered. The commands are
+            # written to a temporary script at install time, so state established by one command is
+            # visible to those that follow it.
+            - name: "Configuring git"
+              commands:
+                - git config --global user.name "{{{{ my_variable }}}}"
+                - git config --global user.email "{{{{ my_variable }}}}"
+                - git config --global core.autocrlf input
+
             # Display instructions once the install process completes without errors.
             - post_install_instructions: "Run `source ~/.bashrc` as {{{{ my_variable }}}}."
 

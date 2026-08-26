@@ -6,18 +6,21 @@ import re
 import shutil
 import stat
 import sys
+import tempfile
 import textwrap
 
+from contextlib import contextmanager
 from enum import auto, Enum
 from pathlib import Path
 from typing import cast, TYPE_CHECKING
 
 from attrs import define
 from dbrownell_Common.ContextlibEx import ExitStack
-from dbrownell_Common import TextwrapEx
+from dbrownell_Common import SubprocessEx, TextwrapEx
 from jinja2 import Environment, meta
 
 from dbrownell_Dotter.Configuration import (
+    CommandConfigurationEntry,
     Configuration,
     PostInstallConfigurationEntry,
     SourceConfigurationEntry,
@@ -25,7 +28,7 @@ from dbrownell_Dotter.Configuration import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from dbrownell_Common.Streams.DoneManager import DoneManager
 
@@ -50,6 +53,9 @@ class Action(Enum):
     Substitute = auto()
     """Apply regex substitutions to an existing file."""
 
+    Execute = auto()
+    """Run commands via a temporary script."""
+
 
 # ----------------------------------------------------------------------
 @define(frozen=True)
@@ -60,16 +66,22 @@ class Entry:
     """Action to perform for this entry."""
 
     source: Path | None
-    """Source path to a file or directory. None for Substitute actions."""
+    """Source path to a file or directory. None for Substitute and Execute actions."""
 
-    dest: Path
-    """Destination path."""
+    dest: Path | None
+    """Destination path. None for Execute actions."""
 
     rendered_content: str | None = None
     """Rendered template content when the source is a Jinja template."""
 
     substitutions: list[tuple[re.Pattern[str], str]] | None = None
     """List of (pattern, rendered_replacement) tuples for Substitute actions."""
+
+    commands: list[str] | None = None
+    """Rendered commands for Execute actions."""
+
+    name: str | None = None
+    """Rendered display name for Execute actions."""
 
     dynamic_variables: dict[str, object] | None = None
     """Dynamic variables used when rendering this entry's content. These variables will be added to the jinja environment's global variables."""
@@ -215,6 +227,30 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
                     if not bool(condition_result):
                         continue
 
+                if isinstance(entry, CommandConfigurationEntry):
+                    values_to_render = [entry.name, *entry.commands]
+                    rendered_values: list[str] = []
+
+                    for value in values_to_render:
+                        if this_missing_vars := meta.find_undeclared_variables(env.parse(value)):
+                            ProcessMissingVars(config, config_filename, this_missing_vars)
+                        else:
+                            rendered_values.append(_Populate(env, value))
+
+                    if len(rendered_values) == len(values_to_render):
+                        results.append(
+                            Entry(
+                                Action.Execute,
+                                None,
+                                None,
+                                commands=rendered_values[1:],
+                                name=rendered_values[0],
+                                dynamic_variables=dynamic_variables,
+                            ),
+                        )
+
+                    continue
+
                 if isinstance(entry, PostInstallConfigurationEntry):
                     if this_missing_vars := meta.find_undeclared_variables(
                         env.parse(entry.post_install_instructions)
@@ -296,8 +332,8 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
                             dest,
                             rendered_content,
                             substitutions,
-                            dynamic_variables,
-                            entry.make_executable,
+                            dynamic_variables=dynamic_variables,
+                            make_executable=entry.make_executable,
                         )
                     )
 
@@ -367,11 +403,35 @@ def InstallEntries(  # noqa: C901, PLR0912, PLR0915
         action_desc: str | None = None
 
         with dm.Nested(
-            "'{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
+            "'{}' ({} of {})...".format(
+                entry.name if entry.action == Action.Execute else entry.dest,
+                entry_index + 1,
+                len(entries),
+            ),
             lambda: (
                 None if action_desc is None else action_template.format(action_desc)  # noqa: B023
             ),
         ) as entry_dm:
+            if entry.action == Action.Execute:
+                assert entry.commands is not None, entry
+
+                action_desc = "Executed"
+
+                entry_dm.WriteVerbose("\n{}\n\n".format("\n".join(entry.commands)))
+
+                if not dry_run:
+                    with _TemporaryScript(entry.commands) as script_filename:
+                        result = SubprocessEx.Run(f'"{script_filename}"')
+
+                        if result.returncode == 0:
+                            entry_dm.WriteVerbose(result.output)
+                        else:
+                            entry_dm.WriteError(result.output)
+
+                continue
+
+            assert entry.dest is not None, entry
+
             # Substitute action requires the dest to exist (we're modifying an existing file)
             if entry.action == Action.Substitute:
                 if not entry.dest.exists():
@@ -404,7 +464,7 @@ def InstallEntries(  # noqa: C901, PLR0912, PLR0915
             elif entry.action == Action.Link:
                 assert entry.source is not None, entry
 
-                action = lambda: entry.dest.symlink_to(  # noqa: B023, E731
+                action = lambda: entry.dest.symlink_to(  # noqa: B023, E731  # ty: ignore[unresolved-attribute]
                     entry.source,  # noqa: B023  # ty: ignore[invalid-argument-type]
                     target_is_directory=entry.source.is_dir(),  # noqa: B023  # ty: ignore[unresolved-attribute]
                 )
@@ -413,7 +473,7 @@ def InstallEntries(  # noqa: C901, PLR0912, PLR0915
             elif entry.action == Action.Write:
                 assert entry.rendered_content is not None, entry
 
-                action = lambda: entry.dest.write_text(entry.rendered_content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type]
+                action = lambda: entry.dest.write_text(entry.rendered_content, encoding="utf-8")  # noqa: B023, E731  # ty: ignore[invalid-argument-type, unresolved-attribute]
                 action_desc = "Wrote"
 
             elif entry.action == Action.Substitute:
@@ -426,6 +486,7 @@ def InstallEntries(  # noqa: C901, PLR0912, PLR0915
                 # ----------------------------------------------------------------------
                 def ApplySubstitutions(entry: Entry) -> None:
                     assert entry.substitutions is not None
+                    assert entry.dest is not None
 
                     content = entry.dest.read_text(encoding="utf-8")
 
@@ -474,9 +535,19 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
         action_desc: str | None = None
 
         with dm.Nested(
-            "'{}' ({} of {})...".format(entry.dest, entry_index + 1, len(entries)),
+            "'{}' ({} of {})...".format(
+                entry.name if entry.action == Action.Execute else entry.dest,
+                entry_index + 1,
+                len(entries),
+            ),
             lambda: None if action_desc is None else action_template.format(action_desc),  # noqa: B023
         ) as entry_dm:
+            if entry.action == Action.Execute:
+                action_desc = "Skipped Commands"
+                continue
+
+            assert entry.dest is not None, entry
+
             if not entry.dest.exists():
                 entry_dm.WriteError("The destination does not exist.")
                 continue
@@ -544,6 +615,44 @@ def ReverseSyncEntries(  # noqa: C901, PLR0915
 
 # ----------------------------------------------------------------------
 # ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+@contextmanager
+def _TemporaryScript(commands: list[str]) -> Iterator[Path]:
+    # Commands are written to a script (rather than invoked individually) so that state established
+    # by one command is visible to those that follow it.
+    if os.name == "nt":
+        extension = ".cmd"
+        prefix = "@echo off\n"
+
+        # cmd transfers control permanently when one script invokes another without 'call', which
+        # would silently abandon the commands that follow. 'call' is a no-op for everything else.
+        command_prefix = "call "
+
+        # Terminate the script as soon as a command fails.
+        command_suffix = "\nif %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%"
+    else:
+        extension = ".sh"
+
+        # Terminate the script as soon as a command fails.
+        prefix = "#!/usr/bin/env sh\nset -e\n"
+
+        command_prefix = ""
+        command_suffix = ""
+
+    temp_directory = Path(tempfile.mkdtemp())
+
+    with ExitStack(lambda: shutil.rmtree(temp_directory, ignore_errors=True)):
+        filename = temp_directory / f"commands{extension}"
+
+        filename.write_text(
+            prefix + "".join(f"{command_prefix}{command}{command_suffix}\n" for command in commands),
+            encoding="utf-8",
+        )
+        filename.chmod(filename.stat().st_mode | stat.S_IXUSR)
+
+        yield filename
+
+
 # ----------------------------------------------------------------------
 def _Populate(env: Environment, content: str) -> str:
     content = env.from_string(content).render()

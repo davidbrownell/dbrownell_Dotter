@@ -820,6 +820,16 @@ class TestInstallHelp:
         assert "replacement:" in result.output
 
     # ----------------------------------------------------------------------
+    def test_help_includes_commands_example(self) -> None:
+        """Test that Install help includes commands example."""
+
+        result = runner.invoke(app, ["Install", "--help"])
+
+        assert result.exit_code == 0
+        assert "commands:" in result.output
+        assert "git config --global core.autocrlf input" in result.output
+
+    # ----------------------------------------------------------------------
     def test_help_includes_condition_example(self) -> None:
         """Test that Install help includes condition example."""
 
