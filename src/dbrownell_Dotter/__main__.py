@@ -81,6 +81,11 @@ def _InstallHelp() -> str:
               dest: "~/destination/file4.txt"
               condition: "${{HOME}} == '/home/myuser'"
 
+            # Set the execute flag on the destination (only valid when the destination is a file).
+            - source: "relative/path/to/source/script.sh"
+              dest: "~/destination/script.sh"
+              make_executable: true
+
         Variables
         =========
           Variables are provided via the command line using `--var key=value`. They can then be used

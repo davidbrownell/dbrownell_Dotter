@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import textwrap
@@ -255,6 +256,40 @@ class TestResolveEntries:
         assert entries[0].action == Action.Link
         assert entries[0].source == source_file.absolute()
         assert entries[0].dest == dest_path.absolute()
+
+    # ----------------------------------------------------------------------
+    def test_make_executable(self, tmp_path: Path) -> None:
+        """Test that make_executable is propagated from the configuration to the entry."""
+
+        env = Environment()
+
+        (tmp_path / "script.sh").write_text("content", encoding="utf-8")
+        (tmp_path / "data.txt").write_text("content", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                f"""\
+                variable_definitions: {{}}
+                entries:
+                  - source: script.sh
+                    dest: {(tmp_path / "dest.sh").as_posix()}
+                    make_executable: true
+                  - source: data.txt
+                    dest: {(tmp_path / "dest.txt").as_posix()}
+                  - dest: {(tmp_path / "dest.sh").as_posix()}
+                    make_executable: true
+                    substitutions:
+                      - pattern: old
+                        replacement: new
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        entries = ResolveEntries(env, [config_file])
+
+        assert [entry.make_executable for entry in entries] == [True, False, True]
 
     # ----------------------------------------------------------------------
     @pytest.mark.skipif(
@@ -2015,6 +2050,82 @@ class TestInstallEntries:
             f"""\
             Heading...
               '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_make_executable(self, tmp_path: Path) -> None:
+        """Test that make_executable sets the execute flag on the destination file."""
+
+        source_path = tmp_path / "script.sh.jinja"
+        dest_path = tmp_path / "script.sh"
+        entries = [Entry(Action.Write, source_path, dest_path, "#!/bin/sh", make_executable=True)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert os.access(dest_path, os.X_OK)
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote)
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_make_executable_dest_not_file(self, tmp_path: Path) -> None:
+        """Test that make_executable produces an error when the destination is not a file."""
+
+        source_dir = tmp_path / "source_dir"
+        source_dir.mkdir()
+        (source_dir / "file1.txt").write_text("file1 content", encoding="utf-8")
+
+        dest_path = tmp_path / "dest_dir"
+        entries = [Entry(Action.Copy, source_dir, dest_path, make_executable=True)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries)
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_path}' (1 of 1)...
+                ERROR: 'make_executable' is only valid when the destination is a file.
+              DONE! (-1, <scrubbed duration>, Copied)
+            DONE! (-1, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_make_executable_dry_run(self, tmp_path: Path) -> None:
+        """Test that make_executable does not modify the destination during a dry run."""
+
+        source_path = tmp_path / "script.sh.jinja"
+        dest_path = tmp_path / "script.sh"
+        entries = [Entry(Action.Write, source_path, dest_path, "#!/bin/sh", make_executable=True)]
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        InstallEntries(dm, entries, dry_run=True)
+
+        content = cast(str, next(dm_and_content))
+
+        assert not dest_path.exists()
+        assert content == textwrap.dedent(
+            f"""\
+            Heading...
+              '{dest_path}' (1 of 1)...DONE! (0, <scrubbed duration>, Wrote (dry_run))
             DONE! (0, <scrubbed duration>)
             """,
         )

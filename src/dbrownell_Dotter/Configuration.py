@@ -42,6 +42,9 @@ class SourceConfigurationEntry(ConfigurationEntry):
     dest: str
     """Value may include environment variables or jinja2 template variables."""
 
+    make_executable: bool = False
+    """Set the execute flag on the destination; only valid when the destination is a file."""
+
 
 # ----------------------------------------------------------------------
 @define(frozen=True, kw_only=True)
@@ -53,6 +56,9 @@ class SubstituteConfigurationEntry(ConfigurationEntry):
 
     substitutions: list[Substitution]
     """List of regex substitutions to apply to an existing file."""
+
+    make_executable: bool = False
+    """Set the execute flag on the destination; only valid when the destination is a file."""
 
     # ----------------------------------------------------------------------
     def __attrs_post_init__(self) -> None:
