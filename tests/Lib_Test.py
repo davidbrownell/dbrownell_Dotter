@@ -875,8 +875,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "old_value"
                         replacement: "new_value"
@@ -909,8 +908,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "pattern1"
                         replacement: "replacement1"
@@ -950,8 +948,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "^EMAIL=.*$"
                         replacement: "EMAIL={{{{ email }}}}"
@@ -982,8 +979,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "^HOME=.*$"
                         replacement: "HOME=${{MY_HOME_DIR}}"
@@ -1013,8 +1009,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "old"
                         replacement: "{{{{ undefined_var }}}}"
@@ -1049,8 +1044,7 @@ class TestResolveEntries:
                 """\
                 variable_definitions: {}
                 entries:
-                  - source: null
-                    dest: "{{ config_dir }}/target.txt"
+                  - dest: "{{ config_dir }}/target.txt"
                     substitutions:
                       - pattern: "old"
                         replacement: "new"
@@ -1577,8 +1571,7 @@ class TestResolveEntries:
                 entries:
                   - source: source.txt
                     dest: {dest1.as_posix()}
-                  - source: null
-                    dest: {dest2.as_posix()}
+                  - dest: {dest2.as_posix()}
                     substitutions:
                       - pattern: "foo"
                         replacement: "bar"
@@ -1829,8 +1822,7 @@ class TestResolveEntries:
                 f"""\
                 variable_definitions: {{}}
                 entries:
-                  - source: null
-                    dest: {dest_path.as_posix()}
+                  - dest: {dest_path.as_posix()}
                     substitutions:
                       - pattern: "foo"
                         replacement: "bar"
