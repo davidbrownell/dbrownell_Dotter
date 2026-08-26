@@ -4,18 +4,22 @@ import sys
 import textwrap
 import uuid
 
+from io import StringIO
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+from dbrownell_Common.Streams.Capabilities import Capabilities
 from dbrownell_Common.Streams.DoneManager import DoneManager
 from dbrownell_Common.TestHelpers.StreamTestHelpers import GenerateDoneManagerAndContent
+from dbrownell_Common import TextwrapEx
 from jinja2 import Environment
 
 from dbrownell_Dotter.Lib import (
     Entry,
     Action,
+    DisplayPostInstallInstructions,
     InstallEntries,
     ResolveEntries,
     ReverseSyncEntries,
@@ -202,7 +206,7 @@ class TestResolveEntries:
 
         env = Environment()
 
-        entries = ResolveEntries(env, [])
+        entries = ResolveEntries(env, []).entries
 
         assert entries == []
 
@@ -223,7 +227,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert entries == []
 
@@ -250,7 +254,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Link
@@ -287,7 +291,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert [entry.make_executable for entry in entries] == [True, False, True]
 
@@ -313,7 +317,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Copy
@@ -342,7 +346,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file], force_symbolic_links=True)
+        entries = ResolveEntries(env, [config_file], force_symbolic_links=True).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Link
@@ -372,7 +376,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file], force_symbolic_links=True)
+        entries = ResolveEntries(env, [config_file], force_symbolic_links=True).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Link
@@ -403,7 +407,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -435,7 +439,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -466,7 +470,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -496,7 +500,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dest == (tmp_path / "output_folder" / "dest.txt").absolute()
@@ -524,7 +528,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dest == (tmp_path / "env_folder" / "dest.txt").absolute()
@@ -553,7 +557,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == template_file.absolute()
@@ -711,7 +715,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config1, config2])
+        entries = ResolveEntries(env, [config1, config2]).entries
 
         assert len(entries) == 2
         assert entries[0].source == source1.absolute()
@@ -748,7 +752,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
         assert entries[0].action == Action.Link
@@ -782,7 +786,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == template_file.absolute()
@@ -814,7 +818,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == source_file.absolute()
@@ -919,7 +923,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
@@ -956,7 +960,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
@@ -992,7 +996,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
@@ -1023,7 +1027,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
@@ -1088,7 +1092,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dest == (tmp_path / "configs" / "target.txt").absolute()
@@ -1119,7 +1123,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -1151,7 +1155,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dynamic_variables is not None
@@ -1206,7 +1210,7 @@ class TestResolveEntries:
         )
 
         # Process both config files
-        entries = ResolveEntries(env, [config1, config2])
+        entries = ResolveEntries(env, [config1, config2]).entries
 
         # Verify that each entry has its own dynamic_variables with correct config_file_dir
         assert len(entries) == 2
@@ -1245,7 +1249,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dest == (config_dir / "output" / "dest.txt").absolute()
@@ -1276,7 +1280,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -1308,7 +1312,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dynamic_variables is not None
@@ -1341,7 +1345,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dynamic_variables is not None
@@ -1380,7 +1384,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dynamic_variables is not None
@@ -1413,7 +1417,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].rendered_content == f"Home: {Path.home()}"
@@ -1443,7 +1447,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].dest == (Path.home() / "test_output" / "dest.txt").absolute()
@@ -1475,7 +1479,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         # At least one platform variable should be True
         assert len(entries) == 1
@@ -1508,7 +1512,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         # No entry should match since we can only be on one platform at a time
         assert len(entries) == 0
@@ -1541,7 +1545,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Write
@@ -1615,7 +1619,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
         assert entries[0].action == Action.Link
@@ -1648,7 +1652,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == source_file.absolute()
@@ -1678,7 +1682,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 0
 
@@ -1705,7 +1709,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
 
@@ -1747,7 +1751,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 2
         assert entries[0].source == source1.absolute()
@@ -1808,7 +1812,7 @@ class TestResolveEntries:
                 encoding="utf-8",
             )
 
-            entries = ResolveEntries(env, [config_file])
+            entries = ResolveEntries(env, [config_file]).entries
 
             assert len(entries) == 1, f"Expected entry for truthy value '{truthy_value}'"
 
@@ -1839,7 +1843,7 @@ class TestResolveEntries:
                 encoding="utf-8",
             )
 
-            entries = ResolveEntries(env, [config_file])
+            entries = ResolveEntries(env, [config_file]).entries
 
             assert len(entries) == 0, f"Expected no entry for falsy value '{falsy_value}'"
 
@@ -1867,7 +1871,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].action == Action.Substitute
@@ -1897,7 +1901,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == source_file.absolute()
@@ -1927,7 +1931,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
 
         assert len(entries) == 1
         assert entries[0].source == source_file.absolute()
@@ -1958,7 +1962,7 @@ class TestResolveEntries:
                 encoding="utf-8",
             )
 
-            entries = ResolveEntries(env, [config_file])
+            entries = ResolveEntries(env, [config_file]).entries
 
             assert len(entries) == 0, f"Expected no entry for condition '{condition}' when os_name='Windows'"
 
@@ -1989,7 +1993,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
         assert len(entries) == 1
 
         # Test boolean variable
@@ -2006,7 +2010,7 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
         assert len(entries) == 1
 
         # Test combined expression
@@ -2023,8 +2027,240 @@ class TestResolveEntries:
             encoding="utf-8",
         )
 
-        entries = ResolveEntries(env, [config_file])
+        entries = ResolveEntries(env, [config_file]).entries
         assert len(entries) == 1
+
+    # ----------------------------------------------------------------------
+    def test_post_install_instructions(self, tmp_path: Path, monkeypatch) -> None:
+        """Test that post_install_instructions are rendered and returned."""
+
+        env = Environment()
+        env.globals["shell"] = "zsh"  # ty: ignore[invalid-assignment]
+
+        monkeypatch.setenv("POST_INSTALL_TEST_VAR", "env_value")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - post_install_instructions: "Restart {{ shell }} (${POST_INSTALL_TEST_VAR})."
+                  - post_install_instructions: |
+                      Multiple
+                      lines.
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        resolved_content = ResolveEntries(env, [config_file])
+
+        assert resolved_content.entries == []
+        assert resolved_content.post_install_instructions == [
+            "Restart zsh (env_value).",
+            "Multiple\nlines.",
+        ]
+
+    # ----------------------------------------------------------------------
+    def test_post_install_instructions_with_condition(self, tmp_path: Path) -> None:
+        """Test that post_install_instructions are skipped when the condition is false."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - post_install_instructions: "Included."
+                    condition: "is_windows or is_linux or is_macos"
+                  - post_install_instructions: "Excluded."
+                    condition: "false"
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        resolved_content = ResolveEntries(env, [config_file])
+
+        assert resolved_content.post_install_instructions == ["Included."]
+
+    # ----------------------------------------------------------------------
+    def test_post_install_instructions_across_config_files(self, tmp_path: Path) -> None:
+        """Test that post_install_instructions are accumulated across configuration files."""
+
+        env = Environment()
+
+        config1 = tmp_path / "config1.yaml"
+        config1.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - post_install_instructions: "From config1."
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        config2 = tmp_path / "config2.yaml"
+        config2.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - post_install_instructions: "From config2."
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        resolved_content = ResolveEntries(env, [config1, config2])
+
+        assert resolved_content.post_install_instructions == ["From config1.", "From config2."]
+
+    # ----------------------------------------------------------------------
+    def test_missing_variable_in_post_install_instructions_raises_error(self, tmp_path: Path) -> None:
+        """Test that missing Jinja variables in post_install_instructions raise ValueError."""
+
+        env = Environment()
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            textwrap.dedent(
+                """\
+                variable_definitions:
+                  undefined_var: "A description of undefined_var."
+                entries:
+                  - post_install_instructions: "Restart {{ undefined_var }}."
+                """,
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            ResolveEntries(env, [config_file])
+
+        assert str(exc_info.value) == textwrap.dedent(
+            f"""\
+            The following variables are used in the configuration but are not defined:
+
+                '{config_file}':
+                    - undefined_var : A description of undefined_var.
+
+            """,
+        )
+
+
+# ----------------------------------------------------------------------
+class TestDisplayPostInstallInstructions:
+    # ----------------------------------------------------------------------
+    def test_single(self) -> None:
+        """Test displaying a single set of instructions."""
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        DisplayPostInstallInstructions(dm, ["Restart your shell."])
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+
+              Post-Install Instructions
+              -------------------------
+              1) Restart your shell.
+
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_multiple_are_numbered(self) -> None:
+        """Test that each set of instructions is prefixed with its 1-based index."""
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        DisplayPostInstallInstructions(dm, [f"Instructions {index}." for index in range(1, 11)])
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+
+              Post-Install Instructions
+              -------------------------
+              1) Instructions 1.
+
+              2) Instructions 2.
+
+              3) Instructions 3.
+
+              4) Instructions 4.
+
+              5) Instructions 5.
+
+              6) Instructions 6.
+
+              7) Instructions 7.
+
+              8) Instructions 8.
+
+              9) Instructions 9.
+
+              10) Instructions 10.
+
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_multiline_is_aligned(self) -> None:
+        """Test that continuation lines are aligned with the first line's content."""
+
+        dm_and_content = iter(GenerateDoneManagerAndContent())
+        dm = cast(DoneManager, next(dm_and_content))
+
+        DisplayPostInstallInstructions(dm, ["First line.\n  Indented line.\nLast line.\n"])
+
+        content = cast(str, next(dm_and_content))
+
+        assert content == textwrap.dedent(
+            """\
+            Heading...
+
+              Post-Install Instructions
+              -------------------------
+              1) First line.
+                   Indented line.
+                 Last line.
+
+            DONE! (0, <scrubbed duration>)
+            """,
+        )
+
+    # ----------------------------------------------------------------------
+    def test_header_is_colorized(self) -> None:
+        """Test that the header is colorized when the stream supports colors."""
+
+        sink = Capabilities.Set(
+            StringIO(),
+            Capabilities(is_headless=True, is_interactive=False, supports_colors=True),
+        )
+
+        with DoneManager.Create(sink, "Heading...") as dm:
+            DisplayPostInstallInstructions(dm, ["Restart your shell."])
+
+        content = cast(StringIO, sink).getvalue()
+
+        assert "{}Post-Install Instructions".format(TextwrapEx.BRIGHT_GREEN_COLOR_ON) in content
+        assert "-------------------------{}".format(TextwrapEx.COLOR_OFF) in content
 
 
 # ----------------------------------------------------------------------

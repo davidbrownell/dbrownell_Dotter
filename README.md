@@ -32,6 +32,7 @@
 - **Variable substitution** from command-line arguments or environment variables
 - **Regex-based substitutions** for modifying existing files in-place
 - **Reverse synchronization** to push manual changes back to source files
+- **Post-install instructions** displayed once the install process completes without errors
 
 Configuration is defined in YAML or JSON5 files, making it easy to version control and share your dotfile setup. See [davidbrownell/dotfiles](https://github.com/davidbrownell/dotfiles) for an example of such a configuration.
 
@@ -90,6 +91,10 @@ entries:
   - source: my_script.sh
     dest: ~/bin/my_script.sh
     make_executable: true
+
+  # Instructions displayed once the install process completes without errors
+  - post_install_instructions: |
+      Run `chsh -s $(which zsh)` to make zsh the default shell for {{ username }}.
 ```
 
 #### Examples

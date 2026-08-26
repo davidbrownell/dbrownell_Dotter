@@ -68,7 +68,24 @@ class SubstituteConfigurationEntry(ConfigurationEntry):
 
 
 # ----------------------------------------------------------------------
-ConfigurationEntryTypes = SourceConfigurationEntry | SubstituteConfigurationEntry
+@define(frozen=True, kw_only=True)
+class PostInstallConfigurationEntry(ConfigurationEntry):
+    """An entry that displays instructions once the install process completes without errors."""
+
+    post_install_instructions: str
+    """Value may include environment variables or jinja2 template variables."""
+
+    # ----------------------------------------------------------------------
+    def __attrs_post_init__(self) -> None:
+        if not self.post_install_instructions.strip():
+            msg = "'post_install_instructions' must not be empty."
+            raise ValueError(msg)
+
+
+# ----------------------------------------------------------------------
+ConfigurationEntryTypes = (
+    SourceConfigurationEntry | SubstituteConfigurationEntry | PostInstallConfigurationEntry
+)
 """All concrete configuration entry types; cattrs uses this union to determine the type of each entry."""
 
 

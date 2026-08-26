@@ -9,6 +9,7 @@ from cattrs.errors import ClassValidationError
 from dbrownell_Dotter.Configuration import (
     Configuration,
     ConfigurationEntryTypes,
+    PostInstallConfigurationEntry,
     SourceConfigurationEntry,
     SubstituteConfigurationEntry,
     Substitution,
@@ -97,6 +98,32 @@ class TestSubstituteConfigurationEntry:
     def test_ConstructWithoutSubstitutions(self) -> None:
         with pytest.raises(ValueError, match="'substitutions' must contain at least one item."):
             SubstituteConfigurationEntry(dest="/dest.txt", substitutions=[])
+
+
+# ----------------------------------------------------------------------
+class TestPostInstallConfigurationEntry:
+    # ----------------------------------------------------------------------
+    def test_Construct(self) -> None:
+        entry = PostInstallConfigurationEntry(post_install_instructions="Do this thing.")
+
+        assert entry.post_install_instructions == "Do this thing."
+        assert entry.condition is None
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithCondition(self) -> None:
+        entry = PostInstallConfigurationEntry(
+            post_install_instructions="Do this thing.",
+            condition="{{ os_name == 'Windows' }}",
+        )
+
+        assert entry.post_install_instructions == "Do this thing."
+        assert entry.condition == "{{ os_name == 'Windows' }}"
+
+    # ----------------------------------------------------------------------
+    @pytest.mark.parametrize("instructions", ["", "   \n  "])
+    def test_ConstructWithoutInstructions(self, instructions) -> None:
+        with pytest.raises(ValueError, match="'post_install_instructions' must not be empty."):
+            PostInstallConfigurationEntry(post_install_instructions=instructions)
 
 
 # ----------------------------------------------------------------------
@@ -241,13 +268,14 @@ class TestConfiguration:
                     substitutions:
                       - pattern: "old_value"
                         replacement: "new_value"
+                  - post_install_instructions: "Do this thing."
                 """,
             ),
         )
 
         config = Configuration.FromFile(Path("config.yaml"))
 
-        assert len(config.entries) == 2
+        assert len(config.entries) == 3
 
         source_entry = config.entries[0]
         assert isinstance(source_entry, SourceConfigurationEntry)
@@ -258,6 +286,10 @@ class TestConfiguration:
         assert isinstance(substitute_entry, SubstituteConfigurationEntry)
         assert substitute_entry.dest == "/two.txt"
         assert substitute_entry.substitutions == [Substitution("old_value", "new_value")]
+
+        post_install_entry = config.entries[2]
+        assert isinstance(post_install_entry, PostInstallConfigurationEntry)
+        assert post_install_entry.post_install_instructions == "Do this thing."
 
     # ----------------------------------------------------------------------
     def test_FromFileWithMakeExecutable(self, fs) -> None:
@@ -283,7 +315,11 @@ class TestConfiguration:
 
         config = Configuration.FromFile(Path("config.yaml"))
 
-        assert [e.make_executable for e in config.entries] == [True, True, False]
+        assert [e.make_executable for e in config.entries] == [  # ty: ignore[unresolved-attribute]
+            True,
+            True,
+            False,
+        ]
 
     # ----------------------------------------------------------------------
     def test_FromFileInvalidEntry(self, fs) -> None:

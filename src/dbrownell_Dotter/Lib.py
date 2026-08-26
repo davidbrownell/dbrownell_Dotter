@@ -19,6 +19,7 @@ from jinja2 import Environment, meta
 
 from dbrownell_Dotter.Configuration import (
     Configuration,
+    PostInstallConfigurationEntry,
     SourceConfigurationEntry,
     SubstituteConfigurationEntry,
 )
@@ -75,6 +76,18 @@ class Entry:
 
     make_executable: bool = False
     """Set the execute flag on the destination; only valid when the destination is a file."""
+
+
+# ----------------------------------------------------------------------
+@define(frozen=True)
+class ResolvedContent:
+    """Content resolved from configuration files."""
+
+    entries: list[Entry]
+    """Entries to be processed."""
+
+    post_install_instructions: list[str]
+    """Rendered instructions to display once the install process completes without errors."""
 
 
 # ----------------------------------------------------------------------
@@ -137,10 +150,11 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
     config_filenames: list[Path],
     *,
     force_symbolic_links: bool = False,
-) -> list[Entry]:
-    """Resolve the configuration data into a list of entries that can be processed."""
+) -> ResolvedContent:
+    """Resolve the configuration data into content that can be processed."""
 
     results: list[Entry] = []
+    post_install_instructions: list[str] = []
     all_missing_vars: dict[Path, set[str]] = {}
 
     # ----------------------------------------------------------------------
@@ -200,6 +214,18 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
 
                     if not bool(condition_result):
                         continue
+
+                if isinstance(entry, PostInstallConfigurationEntry):
+                    if this_missing_vars := meta.find_undeclared_variables(
+                        env.parse(entry.post_install_instructions)
+                    ):
+                        ProcessMissingVars(config, config_filename, this_missing_vars)
+                    else:
+                        post_install_instructions.append(
+                            _Populate(env, entry.post_install_instructions),
+                        )
+
+                    continue
 
                 has_errors = False
 
@@ -299,7 +325,30 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
 
         raise ValueError(msg)
 
-    return results
+    return ResolvedContent(results, post_install_instructions)
+
+
+# ----------------------------------------------------------------------
+def DisplayPostInstallInstructions(dm: DoneManager, post_install_instructions: list[str]) -> None:
+    """Display the instructions produced by the configuration files."""
+
+    header = textwrap.dedent(
+        """\
+        Post-Install Instructions
+        -------------------------""",
+    )
+
+    if dm.capabilities.supports_colors:
+        header = f"{TextwrapEx.BRIGHT_GREEN_COLOR_ON}{header}{TextwrapEx.COLOR_OFF}"
+
+    items: list[str] = []
+
+    for index, instructions in enumerate(post_install_instructions):
+        prefix = "{}) ".format(index + 1)
+
+        items.append(prefix + TextwrapEx.Indent(instructions.strip(), len(prefix), skip_first_line=True))
+
+    dm.WriteLine("\n{}\n{}\n\n".format(header, "\n\n".join(items)))
 
 
 # ----------------------------------------------------------------------
