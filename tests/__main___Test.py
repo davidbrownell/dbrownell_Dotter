@@ -1,4 +1,6 @@
 # noqa: D100
+import re
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +13,19 @@ from dbrownell_Dotter.Lib import Entry, Action, ResolvedContent
 
 # ----------------------------------------------------------------------
 runner = CliRunner()
+
+_ansi_escape_regex = re.compile(r"\x1b\[[0-9;]*m")
+
+
+# ----------------------------------------------------------------------
+def StripAnsi(value: str) -> str:
+    """Removes ANSI escape sequences from the provided value.
+
+    Typer forces colored output when GITHUB_ACTIONS is defined, which causes rich to
+    inject escape sequences into option-like text (e.g. `--global`) within help content.
+    """
+
+    return _ansi_escape_regex.sub("", value)
 
 
 # ----------------------------------------------------------------------
@@ -827,7 +842,7 @@ class TestInstallHelp:
 
         assert result.exit_code == 0
         assert "commands:" in result.output
-        assert "git config --global core.autocrlf input" in result.output
+        assert "git config --global core.autocrlf input" in StripAnsi(result.output)
 
     # ----------------------------------------------------------------------
     def test_help_includes_condition_example(self) -> None:
