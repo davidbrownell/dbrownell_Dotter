@@ -37,6 +37,18 @@ class TestSourceConfigurationEntry:
         assert entry.dest == "/dest.txt"
         assert entry.condition == "{{ os_name == 'Windows' }}"
 
+    # ----------------------------------------------------------------------
+    def test_ConstructWithMakeExecutable(self) -> None:
+        assert SourceConfigurationEntry(source=Path("foo/bar.txt"), dest="/dest.txt").make_executable is False
+
+        entry = SourceConfigurationEntry(
+            source=Path("foo/bar.txt"),
+            dest="/dest.txt",
+            make_executable=True,
+        )
+
+        assert entry.make_executable is True
+
 
 # ----------------------------------------------------------------------
 class TestSubstituteConfigurationEntry:
@@ -63,6 +75,23 @@ class TestSubstituteConfigurationEntry:
         assert entry.dest == "/dest.txt"
         assert entry.substitutions == substitutions
         assert entry.condition == "{{ os_name == 'Windows' }}"
+
+    # ----------------------------------------------------------------------
+    def test_ConstructWithMakeExecutable(self) -> None:
+        substitutions = [Substitution("old_value", "new_value")]
+
+        assert (
+            SubstituteConfigurationEntry(dest="/dest.txt", substitutions=substitutions).make_executable
+            is False
+        )
+
+        entry = SubstituteConfigurationEntry(
+            dest="/dest.txt",
+            substitutions=substitutions,
+            make_executable=True,
+        )
+
+        assert entry.make_executable is True
 
     # ----------------------------------------------------------------------
     def test_ConstructWithoutSubstitutions(self) -> None:
@@ -229,6 +258,32 @@ class TestConfiguration:
         assert isinstance(substitute_entry, SubstituteConfigurationEntry)
         assert substitute_entry.dest == "/two.txt"
         assert substitute_entry.substitutions == [Substitution("old_value", "new_value")]
+
+    # ----------------------------------------------------------------------
+    def test_FromFileWithMakeExecutable(self, fs) -> None:
+        fs.create_file(
+            "config.yaml",
+            contents=textwrap.dedent(
+                """\
+                variable_definitions: {}
+                entries:
+                  - source: "one.sh"
+                    dest: "/one.sh"
+                    make_executable: true
+                  - dest: "/two.sh"
+                    make_executable: true
+                    substitutions:
+                      - pattern: "old_value"
+                        replacement: "new_value"
+                  - source: "three.txt"
+                    dest: "/three.txt"
+                """,
+            ),
+        )
+
+        config = Configuration.FromFile(Path("config.yaml"))
+
+        assert [e.make_executable for e in config.entries] == [True, True, False]
 
     # ----------------------------------------------------------------------
     def test_FromFileInvalidEntry(self, fs) -> None:

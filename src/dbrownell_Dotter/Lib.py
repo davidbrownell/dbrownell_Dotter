@@ -4,6 +4,7 @@ import hashlib
 import os
 import re
 import shutil
+import stat
 import sys
 import textwrap
 
@@ -71,6 +72,9 @@ class Entry:
 
     dynamic_variables: dict[str, object] | None = None
     """Dynamic variables used when rendering this entry's content. These variables will be added to the jinja environment's global variables."""
+
+    make_executable: bool = False
+    """Set the execute flag on the destination; only valid when the destination is a file."""
 
 
 # ----------------------------------------------------------------------
@@ -267,6 +271,7 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
                             rendered_content,
                             substitutions,
                             dynamic_variables,
+                            entry.make_executable,
                         )
                     )
 
@@ -298,7 +303,7 @@ def ResolveEntries(  # noqa: C901, PLR0912, PLR0915
 
 
 # ----------------------------------------------------------------------
-def InstallEntries(  # noqa: C901, PLR0915
+def InstallEntries(  # noqa: C901, PLR0912, PLR0915
     dm: DoneManager,
     entries: list[Entry],
     *,
@@ -391,6 +396,15 @@ def InstallEntries(  # noqa: C901, PLR0915
             if not dry_run:
                 entry.dest.parent.mkdir(parents=True, exist_ok=True)
                 action()
+
+                if entry.make_executable:
+                    if not entry.dest.is_file():
+                        entry_dm.WriteError("'make_executable' is only valid when the destination is a file.")
+                        continue
+
+                    entry.dest.chmod(
+                        entry.dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+                    )
 
 
 # ----------------------------------------------------------------------

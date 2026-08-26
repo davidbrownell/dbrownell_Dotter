@@ -85,6 +85,11 @@ entries:
     substitutions:
       - pattern: "^EMAIL=.*$"
         replacement: "EMAIL={{ email }}"
+
+  # Set the execute flag on the destination (only valid when the destination is a file)
+  - source: my_script.sh
+    dest: ~/bin/my_script.sh
+    make_executable: true
 ```
 
 #### Examples
