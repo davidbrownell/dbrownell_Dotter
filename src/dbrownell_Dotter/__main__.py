@@ -86,6 +86,9 @@ def _InstallHelp() -> str:
               dest: "~/destination/script.sh"
               make_executable: true
 
+            # Display instructions once the install process completes without errors.
+            - post_install_instructions: "Run `source ~/.bashrc` as {{{{ my_variable }}}}."
+
         Variables
         =========
           Variables are provided via the command line using `--var key=value`. They can then be used
@@ -162,21 +165,26 @@ def Install(
         env = Environment(autoescape=False)  # noqa: S701 (we want to preserve the original content, regardless of what it is)
         env.globals.update(var_dict)
 
-        entries: list[Lib.Entry] = []
+        resolved_content = Lib.ResolvedContent([], [])
 
         with dm.Nested(
             "Resolving entries...",
-            lambda: "{} found".format(inflect.no("entry", len(entries))),
+            lambda: "{} found".format(inflect.no("entry", len(resolved_content.entries))),
             suffix="\n",
         ):
-            entries = Lib.ResolveEntries(
+            resolved_content = Lib.ResolveEntries(
                 env,
                 config_filenames,
                 force_symbolic_links=force_symbolic_links,
             )
 
+        entries = resolved_content.entries
+
         with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as processing_dm:
             Lib.InstallEntries(processing_dm, entries, force=force, dry_run=dry_run)
+
+        if dm.result >= 0 and resolved_content.post_install_instructions:
+            Lib.DisplayPostInstallInstructions(dm, resolved_content.post_install_instructions)
 
 
 # ----------------------------------------------------------------------
@@ -245,7 +253,7 @@ def ReverseSync(
                 env,
                 config_filenames,
                 force_symbolic_links=force_symbolic_links,
-            )
+            ).entries
 
         with dm.Nested("Processing {}...".format(inflect.no("entry", len(entries)))) as reverse_sync_dm:
             Lib.ReverseSyncEntries(reverse_sync_dm, entries, var_dict, dry_run=dry_run)

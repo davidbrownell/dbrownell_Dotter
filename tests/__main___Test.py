@@ -6,7 +6,7 @@ from jinja2 import Environment
 from typer.testing import CliRunner
 
 from dbrownell_Dotter.__main__ import app
-from dbrownell_Dotter.Lib import Entry, Action
+from dbrownell_Dotter.Lib import Entry, Action, ResolvedContent
 
 
 # ----------------------------------------------------------------------
@@ -38,7 +38,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = mock_entries
+            mock_resolve.return_value = ResolvedContent(mock_entries, [])
 
             result = runner.invoke(app, ["Install", str(config_file)])
 
@@ -70,7 +70,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config1), str(config2)])
 
@@ -91,7 +91,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--force"])
 
@@ -111,7 +111,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--dry-run"])
 
@@ -131,7 +131,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--force", "--dry-run"])
 
@@ -152,7 +152,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--force-symbolic-links"])
 
@@ -172,7 +172,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file)])
 
@@ -192,7 +192,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--var", "name=value"])
 
@@ -214,7 +214,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(
                 app,
@@ -239,7 +239,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(
                 app,
@@ -283,7 +283,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
         ):
-            mock_resolve.return_value = mock_entries
+            mock_resolve.return_value = ResolvedContent(mock_entries, [])
 
             result = runner.invoke(app, ["Install", str(config_file)])
 
@@ -314,7 +314,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--verbose"])
 
@@ -331,7 +331,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--debug"])
 
@@ -348,7 +348,7 @@ class TestInstall:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["Install", str(config_file), "--var", "empty="])
 
@@ -357,6 +357,64 @@ class TestInstall:
             resolve_args = mock_resolve.call_args
             env = resolve_args[0][0]
             assert env.globals["empty"] == ""
+
+    # ----------------------------------------------------------------------
+    def test_post_install_instructions(self, tmp_path: Path) -> None:
+        """Test that post-install instructions are displayed once the install completes."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.DisplayPostInstallInstructions") as mock_display,
+        ):
+            mock_resolve.return_value = ResolvedContent([], ["Restart your shell."])
+
+            result = runner.invoke(app, ["Install", str(config_file)])
+
+            assert result.exit_code == 0
+            assert mock_display.call_args[0][1] == ["Restart your shell."]
+
+    # ----------------------------------------------------------------------
+    def test_no_post_install_instructions(self, tmp_path: Path) -> None:
+        """Test that nothing is displayed when there are no post-install instructions."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.InstallEntries"),
+            patch("dbrownell_Dotter.__main__.Lib.DisplayPostInstallInstructions") as mock_display,
+        ):
+            mock_resolve.return_value = ResolvedContent([], [])
+
+            result = runner.invoke(app, ["Install", str(config_file)])
+
+            assert result.exit_code == 0
+            mock_display.assert_not_called()
+
+    # ----------------------------------------------------------------------
+    def test_post_install_instructions_not_displayed_on_error(self, tmp_path: Path) -> None:
+        """Test that post-install instructions are not displayed when the install has errors."""
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("variable_definitions: {}\nentries: []", encoding="utf-8")
+
+        with (
+            patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
+            patch("dbrownell_Dotter.__main__.Lib.InstallEntries") as mock_process,
+            patch("dbrownell_Dotter.__main__.Lib.DisplayPostInstallInstructions") as mock_display,
+        ):
+            mock_resolve.return_value = ResolvedContent([], ["Restart your shell."])
+            mock_process.side_effect = lambda dm, _entries, **_kwargs: dm.WriteError("Install failed.")
+
+            result = runner.invoke(app, ["Install", str(config_file)])
+
+            assert result.exit_code != 0
+            mock_display.assert_not_called()
 
 
 # ----------------------------------------------------------------------
@@ -384,7 +442,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = mock_entries
+            mock_resolve.return_value = ResolvedContent(mock_entries, [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file)])
 
@@ -415,7 +473,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config1), str(config2)])
 
@@ -436,7 +494,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--dry-run"])
 
@@ -456,7 +514,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--force-symbolic-links"])
 
@@ -476,7 +534,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file)])
 
@@ -496,7 +554,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--var", "name=value"])
 
@@ -522,7 +580,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(
                 app,
@@ -551,7 +609,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(
                 app,
@@ -599,7 +657,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = mock_entries
+            mock_resolve.return_value = ResolvedContent(mock_entries, [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file)])
 
@@ -630,7 +688,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--verbose"])
 
@@ -647,7 +705,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries"),
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--debug"])
 
@@ -664,7 +722,7 @@ class TestReverseSync:
             patch("dbrownell_Dotter.__main__.Lib.ResolveEntries") as mock_resolve,
             patch("dbrownell_Dotter.__main__.Lib.ReverseSyncEntries") as mock_reverse_sync,
         ):
-            mock_resolve.return_value = []
+            mock_resolve.return_value = ResolvedContent([], [])
 
             result = runner.invoke(app, ["ReverseSync", str(config_file), "--var", "empty="])
 
