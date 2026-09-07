@@ -1,4 +1,4 @@
-<!-- Version: 0.2.0 -->
+<!-- Version: 0.3.0 -->
 
 # Architectural Principles
 Adhere to these architectural principles when planning and writing code.
@@ -15,6 +15,9 @@ Adhere to these principles when generating code comments or documentation.
 - Explain why code was introduced, not what the code is doing.
 - Generate short, crisp documentation rather than verbose prose.
 
+# Static Analysis/Linting Errors
+Do not suppress static analysis/linting-style errors; attempt to address the problem instead. Consult the human if the problem cannot be properly addressed.
+
 # Python Development
 Adhere to these conventions when writing python code.
 
@@ -25,6 +28,11 @@ Use these conventions when writing python code:
 - Function and method names use `PascalCase`.
 - Variables use `snake_case`.
 - Filenames use `snake_case` (but this is not required).
+
+## Type Annotations
+Adhere to these conventions when adding type annotations to python code.
+
+- Do not use `Any` in production code; use `object` instead.
 
 ## Testing
 Use these conventions when writing or exercising tests:
