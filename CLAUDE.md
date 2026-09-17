@@ -1,4 +1,4 @@
-<!-- Version: 0.4.0 -->
+<!-- Version: 0.6.0 -->
 
 # File Format
 Adhere to these principles when writing files.
@@ -38,6 +38,14 @@ Use these conventions when writing python code:
 Adhere to these conventions when adding type annotations to python code.
 
 - Do not use `Any` in production code; use `object` instead.
+- Never introduce `from __future__ import annotations`.
+
+## Dependencies
+Use these conventions when managing python dependencies:
+
+- Add dependencies via `uv add <package name>`; do not specify an explicit version so that the latest version of the package is applied.
+- Add development-only dependencies via `uv add --dev <package name>`.
+- Upgrade an existing dependency via `uv add --upgrade <package name>`.
 
 ## Testing
 Use these conventions when writing or exercising tests:
