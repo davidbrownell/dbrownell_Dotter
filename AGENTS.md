@@ -1,4 +1,4 @@
-<!-- Version: 0.6.0 -->
+<!-- python_development Version: 0.8.0 -->
 
 # File Format
 Adhere to these principles when writing files.
@@ -9,7 +9,7 @@ Adhere to these principles when writing files.
 Adhere to these architectural principles when planning and writing code.
 
 - Don't Repeat Yourself (DRY)
-- SOLID
+- SOLID design principles
 - Generate the least amount of code possible
 - Never modify code associated with the system under test when writing tests.
 
@@ -25,6 +25,9 @@ Do not suppress static analysis/linting-style errors; attempt to address the pro
 
 # Python Development
 Adhere to these conventions when writing python code.
+
+## General
+Run `python`-related tasks using `uv`.
 
 ## Naming
 Use these conventions when writing python code:
